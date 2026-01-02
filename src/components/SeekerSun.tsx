@@ -5,28 +5,58 @@ import { VISUAL_CONFIG } from '@/constants';
 
 interface SeekerSunProps {
   sunType: 'combo' | 'seeker' | 'preorder' | 'default';
+  walletSeed?: string;
 }
 
-// Plasma shader for the sun surface
+// Hash function to generate deterministic values from wallet address
+function hashString(str: string): number {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
+}
+
+// Generate procedural uniqueness from wallet seed
+function getProceduralParams(seed: string) {
+  const hash = hashString(seed);
+  return {
+    noiseScale: 1.5 + (hash % 100) / 50, // 1.5 - 3.5
+    hueShift: (hash % 360) / 360, // 0 - 1
+    turbulence: 0.8 + (hash % 40) / 100, // 0.8 - 1.2
+    pulseSpeed: 0.3 + (hash % 50) / 100, // 0.3 - 0.8
+  };
+}
+
+// High-quality plasma vertex shader
 const plasmaVertexShader = `
   varying vec2 vUv;
   varying vec3 vPosition;
+  varying vec3 vNormal;
   
   void main() {
     vUv = uv;
     vPosition = position;
+    vNormal = normalize(normalMatrix * normal);
     gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
   }
 `;
 
+// Clean, non-overlapping plasma fragment shader with intense core
 const plasmaFragmentShader = `
   uniform float uTime;
   uniform vec3 uColor1;
   uniform vec3 uColor2;
   uniform float uIntensity;
+  uniform float uNoiseScale;
+  uniform float uTurbulence;
+  uniform float uPulseSpeed;
   
   varying vec2 vUv;
   varying vec3 vPosition;
+  varying vec3 vNormal;
   
   // Simplex noise functions
   vec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }
@@ -95,62 +125,56 @@ const plasmaFragmentShader = `
   }
   
   void main() {
-    vec3 pos = vPosition * 2.0;
+    vec3 pos = vPosition * uNoiseScale;
     
-    // Multi-layered plasma effect
-    float noise1 = snoise(pos + uTime * 0.1);
-    float noise2 = snoise(pos * 2.0 - uTime * 0.15) * 0.5;
-    float noise3 = snoise(pos * 4.0 + uTime * 0.2) * 0.25;
+    // Multi-layered turbulent plasma
+    float t = uTime * uPulseSpeed;
+    float noise1 = snoise(pos + t * 0.1) * uTurbulence;
+    float noise2 = snoise(pos * 2.0 - t * 0.15) * 0.5 * uTurbulence;
+    float noise3 = snoise(pos * 4.0 + t * 0.2) * 0.25 * uTurbulence;
     
     float plasma = noise1 + noise2 + noise3;
-    plasma = plasma * 0.5 + 0.5; // Normalize to 0-1
+    plasma = plasma * 0.5 + 0.5;
     
-    // Color mixing with smooth gradient
+    // Smooth color gradient
     vec3 color = mix(uColor1, uColor2, plasma);
     
-    // Add bright core (fixes black center bug)
-    float centerGlow = 1.0 - length(vUv - 0.5) * 1.5;
-    centerGlow = clamp(centerGlow, 0.0, 1.0);
-    color += vec3(1.0, 0.95, 0.9) * centerGlow * 0.5;
+    // CRITICAL: Intense bright core to fix black center
+    float coreIntensity = pow(1.0 - length(vUv - 0.5) * 1.8, 3.0);
+    coreIntensity = max(coreIntensity, 0.0);
+    vec3 coreColor = vec3(1.0, 0.98, 0.95); // Warm white
+    color = mix(color, coreColor, coreIntensity * 0.7);
     
-    // Intensity boost
+    // Fresnel rim glow
+    float fresnel = pow(1.0 - abs(dot(vNormal, vec3(0.0, 0.0, 1.0))), 2.0);
+    color += uColor1 * fresnel * 0.4;
+    
+    // Apply intensity
     color *= uIntensity;
     
-    // HDR bloom-friendly output
+    // Subtle pulsing
+    float pulse = sin(uTime * uPulseSpeed * 2.0) * 0.05 + 1.0;
+    color *= pulse;
+    
     gl_FragColor = vec4(color, 1.0);
   }
 `;
 
-// Corona/glow shader
-const coronaFragmentShader = `
-  uniform float uTime;
-  uniform vec3 uColor;
-  uniform float uIntensity;
-  
-  varying vec2 vUv;
-  
-  void main() {
-    vec2 center = vec2(0.5, 0.5);
-    float dist = length(vUv - center);
-    
-    // Soft glow falloff
-    float glow = 1.0 - smoothstep(0.0, 0.5, dist);
-    glow = pow(glow, 2.0);
-    
-    // Pulsing effect
-    float pulse = sin(uTime * 0.5) * 0.1 + 0.9;
-    
-    vec3 color = uColor * glow * uIntensity * pulse;
-    float alpha = glow * 0.6;
-    
-    gl_FragColor = vec4(color, alpha);
-  }
-`;
-
-function SunCore({ color1, color2, intensity = 3 }: { 
+// Main sun core - SINGLE sphere, no overlapping
+function SunCore({ 
+  color1, 
+  color2, 
+  intensity = 3,
+  noiseScale = 2,
+  turbulence = 1,
+  pulseSpeed = 0.5,
+}: { 
   color1: string; 
   color2: string; 
   intensity?: number;
+  noiseScale?: number;
+  turbulence?: number;
+  pulseSpeed?: number;
 }) {
   const meshRef = useRef<THREE.Mesh>(null);
   const materialRef = useRef<THREE.ShaderMaterial>(null);
@@ -160,7 +184,10 @@ function SunCore({ color1, color2, intensity = 3 }: {
     uColor1: { value: new THREE.Color(color1) },
     uColor2: { value: new THREE.Color(color2) },
     uIntensity: { value: intensity },
-  }), [color1, color2, intensity]);
+    uNoiseScale: { value: noiseScale },
+    uTurbulence: { value: turbulence },
+    uPulseSpeed: { value: pulseSpeed },
+  }), [color1, color2, intensity, noiseScale, turbulence, pulseSpeed]);
   
   useFrame((state) => {
     if (materialRef.current) {
@@ -185,186 +212,176 @@ function SunCore({ color1, color2, intensity = 3 }: {
   );
 }
 
-function SunCorona({ color, scale = 1.3, intensity = 1.5 }: { 
-  color: string; 
-  scale?: number;
-  intensity?: number;
-}) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  
-  const uniforms = useMemo(() => ({
-    uTime: { value: 0 },
-    uColor: { value: new THREE.Color(color) },
-    uIntensity: { value: intensity },
-  }), [color, intensity]);
-  
-  useFrame((state) => {
-    if (materialRef.current) {
-      materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    }
-  });
-  
-  return (
-    <mesh scale={scale}>
-      <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE, 32, 32]} />
-      <shaderMaterial
-        ref={materialRef}
-        vertexShader={plasmaVertexShader}
-        fragmentShader={coronaFragmentShader}
-        uniforms={uniforms}
-        transparent
-        blending={THREE.AdditiveBlending}
-        depthWrite={false}
-        toneMapped={false}
-      />
-    </mesh>
-  );
-}
-
-// Binary star system for combo effect
+// Binary star system for combo effect - two distinct cores orbiting
 function BinaryStar() {
   const groupRef = useRef<THREE.Group>(null);
-  const star1Ref = useRef<THREE.Group>(null);
-  const star2Ref = useRef<THREE.Group>(null);
+  const star1Ref = useRef<THREE.Mesh>(null);
+  const star2Ref = useRef<THREE.Mesh>(null);
+  const material1Ref = useRef<THREE.ShaderMaterial>(null);
+  const material2Ref = useRef<THREE.ShaderMaterial>(null);
+  
+  const uniforms1 = useMemo(() => ({
+    uTime: { value: 0 },
+    uColor1: { value: new THREE.Color(VISUAL_CONFIG.SUN.SEEKER_COLOR) },
+    uColor2: { value: new THREE.Color('#006688') },
+    uIntensity: { value: 4 },
+    uNoiseScale: { value: 2.5 },
+    uTurbulence: { value: 1.1 },
+    uPulseSpeed: { value: 0.4 },
+  }), []);
+  
+  const uniforms2 = useMemo(() => ({
+    uTime: { value: 0 },
+    uColor1: { value: new THREE.Color(VISUAL_CONFIG.SUN.PREORDER_COLOR) },
+    uColor2: { value: new THREE.Color('#ffaa00') },
+    uIntensity: { value: 4 },
+    uNoiseScale: { value: 2.2 },
+    uTurbulence: { value: 0.9 },
+    uPulseSpeed: { value: 0.5 },
+  }), []);
   
   useFrame((state) => {
     const time = state.clock.elapsedTime;
     
     if (groupRef.current) {
-      groupRef.current.rotation.y += VISUAL_CONFIG.ANIMATION.BINARY_ORBIT;
+      groupRef.current.rotation.y += VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * 0.5;
     }
     
     // Orbital motion for binary stars
-    const orbitRadius = 1.8;
-    const orbitSpeed = VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * 50;
+    const orbitRadius = 2.2;
+    const orbitSpeed = VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * 30;
     
     if (star1Ref.current) {
       star1Ref.current.position.x = Math.cos(time * orbitSpeed) * orbitRadius;
       star1Ref.current.position.z = Math.sin(time * orbitSpeed) * orbitRadius;
+      star1Ref.current.rotation.y += VISUAL_CONFIG.ANIMATION.SUN_ROTATION;
     }
     
     if (star2Ref.current) {
       star2Ref.current.position.x = Math.cos(time * orbitSpeed + Math.PI) * orbitRadius;
       star2Ref.current.position.z = Math.sin(time * orbitSpeed + Math.PI) * orbitRadius;
+      star2Ref.current.rotation.y += VISUAL_CONFIG.ANIMATION.SUN_ROTATION;
+    }
+    
+    if (material1Ref.current) {
+      material1Ref.current.uniforms.uTime.value = time;
+    }
+    if (material2Ref.current) {
+      material2Ref.current.uniforms.uTime.value = time;
     }
   });
   
   return (
     <group ref={groupRef}>
       {/* Cyan star (Seeker) */}
-      <group ref={star1Ref}>
-        <mesh>
-          <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.7, 64, 64]} />
-          <meshStandardMaterial
-            color={VISUAL_CONFIG.SUN.SEEKER_COLOR}
-            emissive={VISUAL_CONFIG.SUN.SEEKER_COLOR}
-            emissiveIntensity={VISUAL_CONFIG.SUN.EMISSIVE_INTENSITY}
-            toneMapped={false}
-          />
-        </mesh>
-        <SunCorona color={VISUAL_CONFIG.SUN.SEEKER_COLOR} scale={1.4} intensity={2} />
-      </group>
-      
-      {/* Gold star (Preorder) */}
-      <group ref={star2Ref}>
-        <mesh>
-          <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.6, 64, 64]} />
-          <meshStandardMaterial
-            color={VISUAL_CONFIG.SUN.PREORDER_COLOR}
-            emissive={VISUAL_CONFIG.SUN.PREORDER_COLOR}
-            emissiveIntensity={VISUAL_CONFIG.SUN.EMISSIVE_INTENSITY}
-            toneMapped={false}
-          />
-        </mesh>
-        <SunCorona color={VISUAL_CONFIG.SUN.PREORDER_COLOR} scale={1.4} intensity={2} />
-      </group>
-      
-      {/* Central aurora bridge between stars */}
-      <mesh>
-        <torusGeometry args={[1.8, 0.15, 16, 100]} />
-        <meshStandardMaterial
-          color="#ffffff"
-          emissive="#88ffff"
-          emissiveIntensity={1}
-          transparent
-          opacity={0.3}
+      <mesh ref={star1Ref}>
+        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.75, 64, 64]} />
+        <shaderMaterial
+          ref={material1Ref}
+          vertexShader={plasmaVertexShader}
+          fragmentShader={plasmaFragmentShader}
+          uniforms={uniforms1}
           toneMapped={false}
         />
       </mesh>
+      
+      {/* Gold star (Preorder) */}
+      <mesh ref={star2Ref}>
+        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.65, 64, 64]} />
+        <shaderMaterial
+          ref={material2Ref}
+          vertexShader={plasmaVertexShader}
+          fragmentShader={plasmaFragmentShader}
+          uniforms={uniforms2}
+          toneMapped={false}
+        />
+      </mesh>
+      
+      {/* Energy bridge between stars - subtle */}
+      <mesh rotation={[Math.PI / 2, 0, 0]}>
+        <torusGeometry args={[2.2, 0.08, 16, 100]} />
+        <meshBasicMaterial
+          color="#ffffff"
+          transparent
+          opacity={0.15}
+          blending={THREE.AdditiveBlending}
+        />
+      </mesh>
+      
+      {/* Central lights */}
+      <pointLight 
+        color={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
+        intensity={80} 
+        distance={60} 
+        decay={2} 
+      />
+      <pointLight 
+        color={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
+        intensity={60} 
+        distance={60} 
+        decay={2} 
+      />
     </group>
   );
 }
 
-// Dual-layered aurora corona for combo effect
-function DualAuroraCorona() {
-  const corona1Ref = useRef<THREE.Mesh>(null);
-  const corona2Ref = useRef<THREE.Mesh>(null);
+// Pulsar effect for combo - light beams from poles
+function PulsarBeams() {
+  const beam1Ref = useRef<THREE.Mesh>(null);
+  const beam2Ref = useRef<THREE.Mesh>(null);
   
   useFrame((state) => {
     const time = state.clock.elapsedTime;
+    const pulse = Math.sin(time * 0.3) * 0.15 + 1;
     
-    if (corona1Ref.current) {
-      corona1Ref.current.rotation.x = time * 0.002;
-      corona1Ref.current.rotation.z = time * 0.001;
+    if (beam1Ref.current) {
+      beam1Ref.current.scale.y = pulse;
+      beam1Ref.current.rotation.y = time * 0.1;
     }
-    
-    if (corona2Ref.current) {
-      corona2Ref.current.rotation.x = -time * 0.0015;
-      corona2Ref.current.rotation.y = time * 0.002;
+    if (beam2Ref.current) {
+      beam2Ref.current.scale.y = pulse;
+      beam2Ref.current.rotation.y = -time * 0.1;
     }
   });
   
   return (
     <>
-      {/* Cyan aurora layer */}
-      <mesh ref={corona1Ref} scale={2.8}>
-        <torusGeometry args={[1.2, 0.08, 16, 100]} />
-        <meshStandardMaterial
-          color={VISUAL_CONFIG.SUN.COMBO_PRIMARY}
-          emissive={VISUAL_CONFIG.SUN.COMBO_PRIMARY}
-          emissiveIntensity={2}
+      {/* Upper beam */}
+      <mesh ref={beam1Ref} position={[0, 8, 0]}>
+        <coneGeometry args={[0.8, 16, 32, 1, true]} />
+        <meshBasicMaterial
+          color="#00ffff"
           transparent
-          opacity={0.5}
-          toneMapped={false}
+          opacity={0.12}
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
         />
       </mesh>
       
-      {/* Gold aurora layer */}
-      <mesh ref={corona2Ref} scale={3.2} rotation={[Math.PI / 3, 0, Math.PI / 4]}>
-        <torusGeometry args={[1.1, 0.06, 16, 100]} />
-        <meshStandardMaterial
-          color={VISUAL_CONFIG.SUN.COMBO_SECONDARY}
-          emissive={VISUAL_CONFIG.SUN.COMBO_SECONDARY}
-          emissiveIntensity={2}
+      {/* Lower beam */}
+      <mesh ref={beam2Ref} position={[0, -8, 0]} rotation={[Math.PI, 0, 0]}>
+        <coneGeometry args={[0.8, 16, 32, 1, true]} />
+        <meshBasicMaterial
+          color="#ffd700"
           transparent
-          opacity={0.4}
-          toneMapped={false}
+          opacity={0.12}
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
         />
       </mesh>
     </>
   );
 }
 
-export function SeekerSun({ sunType }: SeekerSunProps) {
+export function SeekerSun({ sunType, walletSeed = 'default' }: SeekerSunProps) {
+  const proceduralParams = useMemo(() => getProceduralParams(walletSeed), [walletSeed]);
+  
   switch (sunType) {
     case 'combo':
       return (
         <group>
           <BinaryStar />
-          <DualAuroraCorona />
-          {/* Central glow */}
-          <pointLight 
-            color="#00ffff" 
-            intensity={100} 
-            distance={50} 
-            decay={2} 
-          />
-          <pointLight 
-            color="#ffd700" 
-            intensity={80} 
-            distance={50} 
-            decay={2} 
-          />
+          <PulsarBeams />
         </group>
       );
       
@@ -373,14 +390,15 @@ export function SeekerSun({ sunType }: SeekerSunProps) {
         <group>
           <SunCore 
             color1={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
-            color2="#006688"
-            intensity={3.5}
+            color2="#004466"
+            intensity={4}
+            noiseScale={2.5}
+            turbulence={1.2}
+            pulseSpeed={0.4}
           />
-          <SunCorona color={VISUAL_CONFIG.SUN.SEEKER_COLOR} scale={1.5} intensity={2} />
-          <SunCorona color={VISUAL_CONFIG.SUN.SEEKER_COLOR} scale={1.8} intensity={1} />
           <pointLight 
             color={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
-            intensity={120} 
+            intensity={100} 
             distance={60} 
             decay={2} 
           />
@@ -392,14 +410,15 @@ export function SeekerSun({ sunType }: SeekerSunProps) {
         <group>
           <SunCore 
             color1={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
-            color2="#ffaa00"
-            intensity={3.5}
+            color2="#cc8800"
+            intensity={4}
+            noiseScale={2.2}
+            turbulence={1.0}
+            pulseSpeed={0.5}
           />
-          <SunCorona color={VISUAL_CONFIG.SUN.PREORDER_COLOR} scale={1.5} intensity={2} />
-          <SunCorona color="#ffffff" scale={1.8} intensity={0.8} />
           <pointLight 
             color={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
-            intensity={120} 
+            intensity={100} 
             distance={60} 
             decay={2} 
           />
@@ -407,17 +426,20 @@ export function SeekerSun({ sunType }: SeekerSunProps) {
       );
       
     default:
+      // Procedurally unique sun based on wallet address
       return (
         <group>
           <SunCore 
             color1={VISUAL_CONFIG.SUN.DEFAULT_COLOR} 
-            color2="#ff3300"
+            color2="#cc3300"
             intensity={3}
+            noiseScale={proceduralParams.noiseScale}
+            turbulence={proceduralParams.turbulence}
+            pulseSpeed={proceduralParams.pulseSpeed}
           />
-          <SunCorona color={VISUAL_CONFIG.SUN.DEFAULT_COLOR} scale={1.4} intensity={1.5} />
           <pointLight 
             color={VISUAL_CONFIG.SUN.DEFAULT_COLOR} 
-            intensity={100} 
+            intensity={80} 
             distance={50} 
             decay={2} 
           />
