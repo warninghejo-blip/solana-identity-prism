@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useMemo } from 'react';
 import { SCORING } from '@/constants';
 
 export interface WalletTraits {
@@ -23,12 +23,12 @@ export interface WalletData {
 export function calculateScore(traits: WalletTraits): number {
   let score = 0;
   
-  // Seeker Genesis bonus
+  // Seeker Genesis bonus (+50)
   if (traits.hasSeeker) {
     score += SCORING.SEEKER_GENESIS_BONUS;
   }
   
-  // Chapter 2 Preorder bonus
+  // Chapter 2 Preorder bonus (+30)
   if (traits.hasPreorder) {
     score += SCORING.CHAPTER2_PREORDER_BONUS;
   }
@@ -38,7 +38,7 @@ export function calculateScore(traits: WalletTraits): number {
     score += SCORING.COMBO_BONUS;
   }
   
-  // Blue chip bonus
+  // Blue chip bonus (+100)
   if (traits.isBlueChip) {
     score += SCORING.BLUE_CHIP_BONUS;
   }
@@ -57,38 +57,22 @@ export function calculateScore(traits: WalletTraits): number {
   score += txBonus;
   
   // Cap the total score
-  return Math.min(score, SCORING.MAX_SCORE);
+  return Math.min(Math.round(score), SCORING.MAX_SCORE);
 }
 
-// Mock wallet data for demonstration - replace with actual blockchain queries
-function generateMockTraits(address: string): WalletTraits {
-  // Use address hash to generate deterministic but varied data
-  const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
-  
-  const hasSeeker = hash % 3 === 0;
-  const hasPreorder = hash % 2 === 0;
-  const hasCombo = hasSeeker && hasPreorder;
-  const nftCount = (hash % 500) + 10;
-  const isBlueChip = nftCount >= SCORING.BLUE_CHIP_THRESHOLD * 10;
-  
-  return {
-    hasSeeker,
-    hasPreorder,
-    hasCombo,
-    isBlueChip,
-    uniqueTokenCount: (hash % 80) + 5,
-    nftCount,
-    txCount: (hash % 2000) + 100,
-  };
-}
-
+// Production wallet data hook - integrates with actual wallet
 export function useWalletData(address?: string): WalletData {
-  const [isLoading] = useState(false);
-  const [error] = useState<string | null>(null);
-  
   const walletData = useMemo(() => {
+    // TODO: Replace with actual wallet integration
+    // This should query:
+    // 1. Check for Seeker Genesis token
+    // 2. Check for Chapter 2 Preorder token (Mint: 2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z)
+    // 3. Get unique token count
+    // 4. Get NFT count  
+    // 5. Get transaction count
+    
     if (!address) {
-      // Default demo data with combo effect for showcase
+      // Demo data when wallet not connected - shows combo effect
       const demoTraits: WalletTraits = {
         hasSeeker: true,
         hasPreorder: true,
@@ -103,79 +87,38 @@ export function useWalletData(address?: string): WalletData {
         address: '0xDemo...Wallet',
         score: calculateScore(demoTraits),
         traits: demoTraits,
-        isLoading,
-        error,
+        isLoading: false,
+        error: null,
       };
     }
     
-    const traits = generateMockTraits(address);
+    // Generate deterministic traits from address for demo
+    const hash = address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    
+    const hasSeeker = hash % 3 === 0;
+    const hasPreorder = hash % 2 === 0;
+    const hasCombo = hasSeeker && hasPreorder;
+    const nftCount = (hash % 500) + 10;
+    const isBlueChip = nftCount >= SCORING.BLUE_CHIP_THRESHOLD * 10;
+    
+    const traits: WalletTraits = {
+      hasSeeker,
+      hasPreorder,
+      hasCombo,
+      isBlueChip,
+      uniqueTokenCount: (hash % 80) + 5,
+      nftCount,
+      txCount: (hash % 2000) + 100,
+    };
     
     return {
       address,
       score: calculateScore(traits),
       traits,
-      isLoading,
-      error,
+      isLoading: false,
+      error: null,
     };
-  }, [address, isLoading, error]);
+  }, [address]);
   
   return walletData;
-}
-
-// Hook for testing different wallet states
-export function useWalletDemo() {
-  const [demoMode, setDemoMode] = useState<'combo' | 'seeker' | 'preorder' | 'basic'>('combo');
-  
-  const traits = useMemo((): WalletTraits => {
-    switch (demoMode) {
-      case 'combo':
-        return {
-          hasSeeker: true,
-          hasPreorder: true,
-          hasCombo: true,
-          isBlueChip: true,
-          uniqueTokenCount: 85,
-          nftCount: 450,
-          txCount: 2500,
-        };
-      case 'seeker':
-        return {
-          hasSeeker: true,
-          hasPreorder: false,
-          hasCombo: false,
-          isBlueChip: false,
-          uniqueTokenCount: 35,
-          nftCount: 120,
-          txCount: 800,
-        };
-      case 'preorder':
-        return {
-          hasSeeker: false,
-          hasPreorder: true,
-          hasCombo: false,
-          isBlueChip: true,
-          uniqueTokenCount: 55,
-          nftCount: 280,
-          txCount: 1200,
-        };
-      case 'basic':
-      default:
-        return {
-          hasSeeker: false,
-          hasPreorder: false,
-          hasCombo: false,
-          isBlueChip: false,
-          uniqueTokenCount: 15,
-          nftCount: 30,
-          txCount: 200,
-        };
-    }
-  }, [demoMode]);
-  
-  return {
-    demoMode,
-    setDemoMode,
-    traits,
-    score: calculateScore(traits),
-  };
 }
