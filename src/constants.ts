@@ -21,10 +21,10 @@ export const SCORING = {
   BLUE_CHIP_THRESHOLD: 10, // NFT count to qualify as blue chip holder
 } as const;
 
-// Token Contract Addresses (example placeholders - replace with real addresses)
+// Token Contract Addresses (Solana Mint Addresses)
 export const TOKEN_ADDRESSES = {
-  SEEKER_GENESIS: '0x1234567890abcdef1234567890abcdef12345678',
-  CHAPTER2_PREORDER: '0xabcdef1234567890abcdef1234567890abcdef12',
+  SEEKER_GENESIS: 'SeekerGenesisTokenMintAddress', // Replace with actual
+  CHAPTER2_PREORDER: '2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z', // Chapter 2 Preorder Mint
 } as const;
 
 // Visual Configuration
@@ -44,7 +44,7 @@ export const VISUAL_CONFIG = {
   PLANETS: {
     TOKENS_PER_PLANET: 10, // 1 planet per 10 unique tokens
     MAX_PLANETS: 10,
-    MIN_ORBIT_RADIUS: 5,
+    MIN_ORBIT_RADIUS: 6,
     ORBIT_SPACING: 2.5,
     SIZE_RANGE: { min: 0.3, max: 0.8 },
   },
@@ -59,9 +59,9 @@ export const VISUAL_CONFIG = {
   
   // Space dust density based on activity
   DUST: {
-    BASE_COUNT: 200,
-    TX_MULTIPLIER: 10, // Additional particles per 100 tx
-    MAX_PARTICLES: 5000,
+    BASE_COUNT: 150,
+    TX_MULTIPLIER: 8, // Additional particles per 100 tx
+    MAX_PARTICLES: 3000, // Reduced for mobile performance
   },
   
   // Animation speeds (slow and majestic)
@@ -73,14 +73,14 @@ export const VISUAL_CONFIG = {
     BINARY_ORBIT: 0.003,
   },
   
-  // Post-processing (High-Clarity Cinematic)
+  // Post-processing (High-Clarity Cinematic - Mobile Optimized)
   POST_PROCESSING: {
     BLOOM_INTENSITY: 1.2, // Balanced, not overwhelming
     BLOOM_LUMINANCE_THRESHOLD: 0.85, // Only brightest parts glow
     BLOOM_LUMINANCE_SMOOTHING: 0.4,
-    CHROMATIC_ABERRATION: 0.0008, // Very subtle, edge-only
-    VIGNETTE_DARKNESS: 0.4,
-    NOISE_OPACITY: 0.015,
+    CHROMATIC_ABERRATION: 0.0005, // Very subtle, edge-only
+    VIGNETTE_DARKNESS: 0.35,
+    NOISE_OPACITY: 0.012,
   },
   
   // Starfield configuration

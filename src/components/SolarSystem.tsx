@@ -1,4 +1,4 @@
-import { useRef, useMemo, Suspense } from 'react';
+import { useRef, useMemo, Suspense, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Stars, OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration, Vignette, Noise } from '@react-three/postprocessing';
@@ -12,6 +12,30 @@ import type { WalletTraits } from '@/hooks/useWalletData';
 interface SolarSystemProps {
   traits: WalletTraits;
   walletAddress?: string;
+}
+
+// Responsive camera controller
+function ResponsiveCamera() {
+  const { camera, size } = useThree();
+  
+  useEffect(() => {
+    const aspect = size.width / size.height;
+    const isMobile = aspect < 1;
+    
+    if (isMobile) {
+      // Mobile: zoom out more, tilt camera higher
+      camera.position.set(0, 35, 45);
+      (camera as THREE.PerspectiveCamera).fov = 75;
+    } else {
+      // Desktop: standard view
+      camera.position.set(0, 15, 30);
+      (camera as THREE.PerspectiveCamera).fov = 60;
+    }
+    
+    (camera as THREE.PerspectiveCamera).updateProjectionMatrix();
+  }, [camera, size]);
+  
+  return null;
 }
 
 // Faint orbital path - very thin and transparent
@@ -38,9 +62,8 @@ function OrbitPath({ radius }: { radius: number }) {
     return new THREE.LineBasicMaterial({
       color: '#4488ff',
       transparent: true,
-      opacity: 0.04, // Much more transparent
+      opacity: 0.03, // Even more transparent
       blending: THREE.AdditiveBlending,
-      linewidth: 0.5, // Thinner
     });
   }, []);
 
@@ -147,13 +170,36 @@ function Planet({ planet }: { planet: PlanetData }) {
   );
 }
 
-// Space dust/debris particles
+// Create circular particle texture for soft dust
+function createCircleTexture(): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 64;
+  canvas.height = 64;
+  const ctx = canvas.getContext('2d')!;
+  
+  // Radial gradient for soft circular particle
+  const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+  gradient.addColorStop(0.3, 'rgba(255, 255, 255, 0.6)');
+  gradient.addColorStop(0.6, 'rgba(255, 255, 255, 0.2)');
+  gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+  
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 64, 64);
+  
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+// Space dust/debris particles - CIRCULAR soft points (fixes square bug)
 function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spreadRadius: number }) {
   const pointsRef = useRef<THREE.Points>(null);
   
-  const { positions, colors } = useMemo(() => {
+  const { positions, colors, sizes, circleTexture } = useMemo(() => {
     const pos = new Float32Array(particleCount * 3);
     const col = new Float32Array(particleCount * 3);
+    const siz = new Float32Array(particleCount);
     
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
@@ -161,25 +207,33 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
       // Distribute in a sphere, avoiding the center
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = 8 + Math.random() * spreadRadius;
+      const r = 10 + Math.random() * spreadRadius;
       
       pos[i3] = r * Math.sin(phi) * Math.cos(theta);
       pos[i3 + 1] = (Math.random() - 0.5) * spreadRadius * 0.3;
       pos[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
       
-      // Varied colors
-      const brightness = 0.5 + Math.random() * 0.5;
-      col[i3] = brightness;
-      col[i3 + 1] = brightness * (0.9 + Math.random() * 0.1);
-      col[i3 + 2] = brightness;
+      // Varied colors - warm white to cool white
+      const warmth = Math.random();
+      col[i3] = 0.9 + warmth * 0.1; // R
+      col[i3 + 1] = 0.9 + warmth * 0.05; // G
+      col[i3 + 2] = 0.85 + (1 - warmth) * 0.15; // B
+      
+      // Varied sizes
+      siz[i] = 0.5 + Math.random() * 1.5;
     }
     
-    return { positions: pos, colors: col };
+    return { 
+      positions: pos, 
+      colors: col, 
+      sizes: siz,
+      circleTexture: createCircleTexture()
+    };
   }, [particleCount, spreadRadius]);
   
   useFrame(() => {
     if (pointsRef.current) {
-      pointsRef.current.rotation.y += 0.00005;
+      pointsRef.current.rotation.y += 0.00003;
     }
   });
   
@@ -198,20 +252,28 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
           array={colors}
           itemSize={3}
         />
+        <bufferAttribute
+          attach="attributes-size"
+          count={particleCount}
+          array={sizes}
+          itemSize={1}
+        />
       </bufferGeometry>
       <pointsMaterial
-        size={0.05}
+        map={circleTexture}
+        size={0.15}
         vertexColors
         transparent
-        opacity={0.6}
+        opacity={0.4}
         sizeAttenuation
         blending={THREE.AdditiveBlending}
+        depthWrite={false}
       />
     </points>
   );
 }
 
-// High-fidelity starfield - rendered BEFORE post-processing layer
+// High-fidelity starfield - crisp white points
 function Starfield() {
   return (
     <Stars
@@ -221,21 +283,46 @@ function Starfield() {
       factor={VISUAL_CONFIG.STARS.FACTOR}
       saturation={VISUAL_CONFIG.STARS.SATURATION}
       fade={VISUAL_CONFIG.STARS.FADE}
-      speed={0.3}
+      speed={0.2}
     />
+  );
+}
+
+// Empty starfield scene for disconnected wallets
+function EmptyScene() {
+  return (
+    <>
+      <ambientLight intensity={0.01} />
+      <Starfield />
+      <SpaceDust particleCount={100} spreadRadius={60} />
+      
+      <OrbitControls
+        enablePan={false}
+        enableZoom={true}
+        minDistance={20}
+        maxDistance={100}
+        dampingFactor={0.03}
+        enableDamping
+        autoRotate
+        autoRotateSpeed={0.03}
+      />
+    </>
   );
 }
 
 // Main scene content
 function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
-  const systemData = useMemo(() => generateSolarSystem(traits), [traits]);
+  const systemData = useMemo(() => generateSolarSystem(traits, walletAddress), [traits, walletAddress]);
   
   return (
     <>
+      {/* Responsive camera adjustment */}
+      <ResponsiveCamera />
+      
       {/* Ambient light for subtle fill */}
       <ambientLight intensity={0.03} />
       
-      {/* High-fidelity starfield - placed first, crisp white points */}
+      {/* High-fidelity starfield - crisp white points */}
       <Starfield />
       
       {/* The Sun - single core with procedural uniqueness */}
@@ -249,7 +336,7 @@ function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
         <Planet key={planet.id} planet={planet} />
       ))}
       
-      {/* Space dust */}
+      {/* Space dust - circular particles */}
       <SpaceDust 
         particleCount={systemData.spaceDust.particleCount} 
         spreadRadius={systemData.spaceDust.spreadRadius} 
@@ -259,16 +346,16 @@ function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
       <OrbitControls
         enablePan={false}
         enableZoom={true}
-        minDistance={5}
-        maxDistance={80}
+        minDistance={8}
+        maxDistance={100}
         dampingFactor={0.03}
         enableDamping
         autoRotate
-        autoRotateSpeed={0.08}
+        autoRotateSpeed={0.06}
       />
       
-      {/* Cinematic post-processing - High Clarity */}
-      <EffectComposer>
+      {/* Cinematic post-processing - optimized for mobile */}
+      <EffectComposer multisampling={0}>
         <Bloom
           intensity={VISUAL_CONFIG.POST_PROCESSING.BLOOM_INTENSITY}
           luminanceThreshold={VISUAL_CONFIG.POST_PROCESSING.BLOOM_LUMINANCE_THRESHOLD}
@@ -282,7 +369,7 @@ function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
             VISUAL_CONFIG.POST_PROCESSING.CHROMATIC_ABERRATION
           )}
           radialModulation={true}
-          modulationOffset={0.8}
+          modulationOffset={0.9}
         />
         <Vignette
           darkness={VISUAL_CONFIG.POST_PROCESSING.VIGNETTE_DARKNESS}
@@ -308,6 +395,9 @@ function LoadingFallback() {
 }
 
 export function SolarSystem({ traits, walletAddress }: SolarSystemProps) {
+  // Check if wallet is connected
+  const isConnected = walletAddress && walletAddress !== '0xDemo...Wallet';
+  
   return (
     <div className="w-full h-full absolute inset-0 bg-black">
       <Canvas
@@ -318,10 +408,14 @@ export function SolarSystem({ traits, walletAddress }: SolarSystemProps) {
           toneMappingExposure: 1.0,
           powerPreference: 'high-performance',
         }}
-        dpr={[1, 2]}
+        dpr={[1, 1.5]} // Optimized for mobile
       >
         <Suspense fallback={<LoadingFallback />}>
-          <SolarSystemScene traits={traits} walletAddress={walletAddress} />
+          {isConnected || traits ? (
+            <SolarSystemScene traits={traits} walletAddress={walletAddress} />
+          ) : (
+            <EmptyScene />
+          )}
         </Suspense>
       </Canvas>
     </div>

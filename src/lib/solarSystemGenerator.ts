@@ -11,6 +11,7 @@ export interface PlanetData {
   initialAngle: number;
   moons: MoonData[];
   hasRing: boolean;
+  geometry: 'sphere' | 'oblate' | 'crystalline';
 }
 
 export interface MoonData {
@@ -33,6 +34,18 @@ export interface SolarSystemData {
   spaceDust: SpaceDustConfig;
   sunType: 'combo' | 'seeker' | 'preorder' | 'default';
   starfieldDensity: number;
+  isBinarySystem: boolean;
+}
+
+// Hash wallet address for deterministic seeding
+function hashWalletAddress(address: string): number {
+  let hash = 0;
+  for (let i = 0; i < address.length; i++) {
+    const char = address.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash;
+  }
+  return Math.abs(hash);
 }
 
 // Seeded random for consistent generation
@@ -43,12 +56,16 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
-  const random = seededRandom(traits.uniqueTokenCount + traits.nftCount);
+export function generateSolarSystem(traits: WalletTraits, walletAddress?: string): SolarSystemData {
+  // Use wallet address as seed for unique generation
+  const addressSeed = walletAddress ? hashWalletAddress(walletAddress) : 0;
+  const random = seededRandom(addressSeed + traits.uniqueTokenCount + traits.nftCount);
   
   // Determine sun type based on traits
   let sunType: SolarSystemData['sunType'] = 'default';
-  if (traits.hasCombo || (traits.hasSeeker && traits.hasPreorder)) {
+  const isBinarySystem = traits.hasCombo || (traits.hasSeeker && traits.hasPreorder);
+  
+  if (isBinarySystem) {
     sunType = 'combo';
   } else if (traits.hasSeeker) {
     sunType = 'seeker';
@@ -61,6 +78,11 @@ export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
     Math.max(1, Math.floor(traits.uniqueTokenCount / VISUAL_CONFIG.PLANETS.TOKENS_PER_PLANET)),
     VISUAL_CONFIG.PLANETS.MAX_PLANETS
   );
+  
+  // Binary systems need more space - increase minimum orbit radius
+  const minOrbitRadius = isBinarySystem 
+    ? VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS + 4 // Extra space for dual stars
+    : VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS;
   
   // Calculate total moons (1 per 50 NFTs)
   const totalMoons = Math.floor(traits.nftCount / VISUAL_CONFIG.MOONS.NFTS_PER_MOON);
@@ -75,6 +97,9 @@ export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
   // Generate planets
   const planets: PlanetData[] = [];
   
+  // Planet geometry types for variety
+  const geometryTypes: PlanetData['geometry'][] = ['sphere', 'oblate', 'crystalline'];
+  
   for (let i = 0; i < planetCount; i++) {
     const typeIndex = Math.floor(random() * PLANET_TYPES.length);
     const size = VISUAL_CONFIG.PLANETS.SIZE_RANGE.min + 
@@ -85,12 +110,17 @@ export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
       largestPlanetIndex = i;
     }
     
-    const orbitRadius = VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS + 
+    const orbitRadius = minOrbitRadius + 
       i * VISUAL_CONFIG.PLANETS.ORBIT_SPACING + 
       random() * 0.5;
     
     // Slower orbits for outer planets (more realistic)
     const orbitSpeed = VISUAL_CONFIG.ANIMATION.PLANET_ORBIT / (1 + i * 0.3);
+    
+    // Deterministic geometry based on seed
+    const geometryIndex = Math.floor(random() * 10);
+    const geometry: PlanetData['geometry'] = geometryIndex < 7 ? 'sphere' : 
+      geometryIndex < 9 ? 'oblate' : 'crystalline';
     
     // Generate moons for this planet
     const moonCount = Math.min(
@@ -122,6 +152,7 @@ export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
       initialAngle: random() * Math.PI * 2,
       moons,
       hasRing: false,
+      geometry,
     });
   }
   
@@ -148,5 +179,6 @@ export function generateSolarSystem(traits: WalletTraits): SolarSystemData {
     },
     sunType,
     starfieldDensity,
+    isBinarySystem,
   };
 }
