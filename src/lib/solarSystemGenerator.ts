@@ -1,4 +1,4 @@
-import { VISUAL_CONFIG, PLANET_TYPES } from '@/constants';
+import { VISUAL_CONFIG, PLANET_TYPES, type RarityTier } from '@/constants';
 import type { WalletTraits } from '@/hooks/useWalletData';
 
 export interface PlanetData {
@@ -29,12 +29,35 @@ export interface SpaceDustConfig {
   colors: string[];
 }
 
+export interface StellarProfile {
+  mode: 'single' | 'binary' | 'binaryPulsar';
+  palette: {
+    primary: string;
+    secondary: string;
+  };
+  intensity: number;
+  plasmaBridge: boolean;
+  novaBridge: boolean;
+  novaBridgeColors?: {
+    primary: string;
+    secondary: string;
+  };
+}
+
+export interface NebulaConfig {
+  colors: string[];
+  intensity: number;
+  radius: number;
+}
+
 export interface SolarSystemData {
   planets: PlanetData[];
   spaceDust: SpaceDustConfig;
-  sunType: 'combo' | 'seeker' | 'preorder' | 'default';
   starfieldDensity: number;
-  isBinarySystem: boolean;
+  stellarProfile: StellarProfile;
+  orbitColor: string;
+  nebula?: NebulaConfig;
+  rarityTier: RarityTier;
 }
 
 // Hash wallet address for deterministic seeding
@@ -56,92 +79,195 @@ function seededRandom(seed: number): () => number {
   };
 }
 
+interface RarityVisualConfig {
+  planetRange: [number, number];
+  starMode: StellarProfile['mode'];
+  palette: { primary: string; secondary: string };
+  ensureRings: boolean;
+  ensureMoons: boolean;
+  orbitColor: string;
+  plasmaBridge?: boolean;
+  nebula?: boolean;
+}
+
+const RARITY_VISUALS: Record<RarityTier, RarityVisualConfig> = {
+  common: {
+    planetRange: [1, 3],
+    starMode: 'single',
+    palette: { primary: VISUAL_CONFIG.SUN.DEFAULT_COLOR, secondary: '#FF9D57' },
+    ensureRings: false,
+    ensureMoons: false,
+    orbitColor: VISUAL_CONFIG.ORBITS.DEFAULT,
+  },
+  rare: {
+    planetRange: [4, 5],
+    starMode: 'single',
+    palette: { primary: VISUAL_CONFIG.SUN.RARE_COLOR, secondary: VISUAL_CONFIG.SUN.RARE_ACCENT },
+    ensureRings: true,
+    ensureMoons: false,
+    orbitColor: VISUAL_CONFIG.ORBITS.DEFAULT,
+  },
+  epic: {
+    planetRange: [5, 6],
+    starMode: 'single',
+    palette: { primary: VISUAL_CONFIG.SUN.EPIC_COLOR, secondary: VISUAL_CONFIG.SUN.EPIC_ACCENT },
+    ensureRings: true,
+    ensureMoons: true,
+    orbitColor: VISUAL_CONFIG.ORBITS.DEFAULT,
+  },
+  legendary: {
+    planetRange: [6, 8],
+    starMode: 'binary',
+    palette: { primary: VISUAL_CONFIG.SUN.LEGENDARY_COLOR, secondary: VISUAL_CONFIG.SUN.RARE_COLOR },
+    ensureRings: true,
+    ensureMoons: true,
+    orbitColor: VISUAL_CONFIG.ORBITS.GOLDEN,
+    plasmaBridge: false,
+  },
+  mythic: {
+    planetRange: [8, 10],
+    starMode: 'binaryPulsar',
+    palette: { primary: VISUAL_CONFIG.SUN.MYTHIC_PRIMARY, secondary: VISUAL_CONFIG.SUN.MYTHIC_SECONDARY },
+    ensureRings: true,
+    ensureMoons: true,
+    orbitColor: VISUAL_CONFIG.ORBITS.GOLDEN,
+    plasmaBridge: true,
+    nebula: true,
+  },
+};
+
+const DUST_MULTIPLIER: Record<RarityTier, number> = {
+  common: 1,
+  rare: 1.2,
+  epic: 1.35,
+  legendary: 1.5,
+  mythic: 1.8,
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
 export function generateSolarSystem(traits: WalletTraits, walletAddress?: string): SolarSystemData {
+  const rarityConfig = RARITY_VISUALS[traits.rarityTier];
+  
   // Use wallet address as seed for unique generation
   const addressSeed = walletAddress ? hashWalletAddress(walletAddress) : 0;
   const random = seededRandom(addressSeed + traits.uniqueTokenCount + traits.nftCount);
-  
-  // Determine sun type based on traits
-  let sunType: SolarSystemData['sunType'] = 'default';
-  const isBinarySystem = traits.hasCombo || (traits.hasSeeker && traits.hasPreorder);
-  
-  if (isBinarySystem) {
-    sunType = 'combo';
-  } else if (traits.hasSeeker) {
-    sunType = 'seeker';
-  } else if (traits.hasPreorder) {
-    sunType = 'preorder';
+
+  // Determine stellar profile
+  let starMode = rarityConfig.starMode;
+  let palette = { ...rarityConfig.palette };
+  let plasmaBridge = Boolean(rarityConfig.plasmaBridge);
+  let novaBridge = false;
+  let novaBridgeColors: StellarProfile['novaBridgeColors'];
+
+  if (traits.hasCombo) {
+    starMode = starMode === 'binaryPulsar' ? 'binaryPulsar' : 'binary';
+    palette = {
+      primary: VISUAL_CONFIG.SUN.SEEKER_COLOR,
+      secondary: VISUAL_CONFIG.SUN.PREORDER_COLOR,
+    };
+    novaBridge = true;
+    novaBridgeColors = {
+      primary: VISUAL_CONFIG.SUN.SEEKER_COLOR,
+      secondary: VISUAL_CONFIG.SUN.PREORDER_COLOR,
+    };
+    plasmaBridge = true;
+  } else if (traits.hasSeeker && !traits.hasPreorder) {
+    palette = {
+      primary: VISUAL_CONFIG.SUN.SEEKER_COLOR,
+      secondary: '#007C99',
+    };
+  } else if (traits.hasPreorder && !traits.hasSeeker) {
+    palette = {
+      primary: VISUAL_CONFIG.SUN.PREORDER_COLOR,
+      secondary: '#FFB347',
+    };
   }
-  
-  // Calculate number of planets (1 per 10 unique tokens, max 10)
-  const planetCount = Math.min(
-    Math.max(1, Math.floor(traits.uniqueTokenCount / VISUAL_CONFIG.PLANETS.TOKENS_PER_PLANET)),
-    VISUAL_CONFIG.PLANETS.MAX_PLANETS
+
+  const stellarProfile: StellarProfile = {
+    mode: starMode,
+    palette,
+    intensity: 4,
+    plasmaBridge,
+    novaBridge,
+    novaBridgeColors,
+  };
+
+  // Calculate number of planets (rarity-based clamp)
+  const basePlanetEstimate = Math.max(
+    rarityConfig.planetRange[0],
+    Math.floor(traits.uniqueTokenCount / VISUAL_CONFIG.PLANETS.TOKENS_PER_PLANET)
   );
-  
-  // Binary systems need more space - increase minimum orbit radius
-  const minOrbitRadius = isBinarySystem 
-    ? VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS + 4 // Extra space for dual stars
-    : VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS;
-  
-  // Calculate total moons (1 per 50 NFTs)
-  const totalMoons = Math.floor(traits.nftCount / VISUAL_CONFIG.MOONS.NFTS_PER_MOON);
-  
-  // Distribute moons across planets
-  const moonsPerPlanet = Math.ceil(totalMoons / planetCount);
-  
-  // Find largest planet index for blue chip ring
+  let planetCount = clamp(
+    basePlanetEstimate || 1,
+    rarityConfig.planetRange[0],
+    rarityConfig.planetRange[1]
+  );
+  if (planetCount < rarityConfig.planetRange[1] && random() > 0.6) {
+    planetCount += 1;
+  }
+  planetCount = clamp(planetCount, rarityConfig.planetRange[0], VISUAL_CONFIG.PLANETS.MAX_PLANETS);
+
+  // Binary systems need more space
+  const minOrbitRadius = stellarProfile.mode === 'single'
+    ? VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS
+    : VISUAL_CONFIG.PLANETS.MIN_ORBIT_RADIUS + 4;
+
+  // Calculate total moons (1 per 50 NFTs) with rarity guarantees
+  const baseMoonCount = Math.floor(traits.nftCount / VISUAL_CONFIG.MOONS.NFTS_PER_MOON);
+  const minimumMoonCount = rarityConfig.ensureMoons ? planetCount : 0;
+  const totalMoons = Math.max(baseMoonCount, minimumMoonCount);
+  const moonsPerPlanet = Math.max(
+    rarityConfig.ensureMoons ? 1 : 0,
+    Math.ceil(totalMoons / planetCount)
+  );
+
+  // Find largest planet index for rings
   let largestPlanetIndex = 0;
   let largestSize = 0;
-  
-  // Generate planets
+
   const planets: PlanetData[] = [];
-  
-  // Planet geometry types for variety
-  const geometryTypes: PlanetData['geometry'][] = ['sphere', 'oblate', 'crystalline'];
-  
   for (let i = 0; i < planetCount; i++) {
     const typeIndex = Math.floor(random() * PLANET_TYPES.length);
-    const size = VISUAL_CONFIG.PLANETS.SIZE_RANGE.min + 
+    const size = VISUAL_CONFIG.PLANETS.SIZE_RANGE.min +
       random() * (VISUAL_CONFIG.PLANETS.SIZE_RANGE.max - VISUAL_CONFIG.PLANETS.SIZE_RANGE.min);
-    
+
     if (size > largestSize) {
       largestSize = size;
       largestPlanetIndex = i;
     }
-    
-    const orbitRadius = minOrbitRadius + 
-      i * VISUAL_CONFIG.PLANETS.ORBIT_SPACING + 
-      random() * 0.5;
-    
-    // Slower orbits for outer planets (more realistic)
-    const orbitSpeed = VISUAL_CONFIG.ANIMATION.PLANET_ORBIT / (1 + i * 0.3);
-    
-    // Deterministic geometry based on seed
+
+    const orbitRadius = minOrbitRadius +
+      i * VISUAL_CONFIG.PLANETS.ORBIT_SPACING +
+      random() * 0.7;
+
+    const orbitSpeed = VISUAL_CONFIG.ANIMATION.PLANET_ORBIT / (1 + i * 0.25);
+
     const geometryIndex = Math.floor(random() * 10);
-    const geometry: PlanetData['geometry'] = geometryIndex < 7 ? 'sphere' : 
+    const geometry: PlanetData['geometry'] = geometryIndex < 7 ? 'sphere' :
       geometryIndex < 9 ? 'oblate' : 'crystalline';
-    
-    // Generate moons for this planet
+
     const moonCount = Math.min(
-      i < planetCount - 1 ? moonsPerPlanet : totalMoons - (moonsPerPlanet * i),
+      rarityConfig.ensureMoons ? Math.max(1, moonsPerPlanet) : Math.max(0, moonsPerPlanet - i),
       VISUAL_CONFIG.MOONS.MAX_MOONS_PER_PLANET
     );
-    
+
     const moons: MoonData[] = [];
-    for (let j = 0; j < Math.max(0, moonCount); j++) {
+    for (let j = 0; j < moonCount; j++) {
       moons.push({
         id: `moon-${i}-${j}`,
-        size: VISUAL_CONFIG.MOONS.SIZE_RANGE.min + 
+        size: VISUAL_CONFIG.MOONS.SIZE_RANGE.min +
           random() * (VISUAL_CONFIG.MOONS.SIZE_RANGE.max - VISUAL_CONFIG.MOONS.SIZE_RANGE.min),
-        orbitRadius: VISUAL_CONFIG.MOONS.ORBIT_RADIUS.min + 
+        orbitRadius: VISUAL_CONFIG.MOONS.ORBIT_RADIUS.min +
           random() * (VISUAL_CONFIG.MOONS.ORBIT_RADIUS.max - VISUAL_CONFIG.MOONS.ORBIT_RADIUS.min),
         orbitSpeed: VISUAL_CONFIG.ANIMATION.MOON_ORBIT * (0.8 + random() * 0.4),
         initialAngle: random() * Math.PI * 2,
         color: `hsl(${random() * 360}, 30%, 70%)`,
       });
     }
-    
+
     planets.push({
       id: `planet-${i}`,
       size,
@@ -155,30 +281,50 @@ export function generateSolarSystem(traits: WalletTraits, walletAddress?: string
       geometry,
     });
   }
-  
-  // Add blue chip ring to largest planet
-  if (traits.isBlueChip && planets.length > 0) {
+
+  const shouldRenderRing = traits.isBlueChip || rarityConfig.ensureRings;
+  if (shouldRenderRing && planets.length > 0) {
     planets[largestPlanetIndex].hasRing = true;
   }
-  
-  // Calculate space dust density based on activity
+
+  const dustBase = VISUAL_CONFIG.DUST.BASE_COUNT +
+    Math.floor(traits.txCount / 100) * VISUAL_CONFIG.DUST.TX_MULTIPLIER;
   const dustParticleCount = Math.min(
-    VISUAL_CONFIG.DUST.BASE_COUNT + Math.floor(traits.txCount / 100) * VISUAL_CONFIG.DUST.TX_MULTIPLIER,
+    Math.floor(dustBase * DUST_MULTIPLIER[traits.rarityTier]),
     VISUAL_CONFIG.DUST.MAX_PARTICLES
   );
-  
-  // Starfield density based on overall activity
-  const starfieldDensity = 0.3 + Math.min(traits.txCount / 3000, 0.7);
-  
+
+  const spreadRadius = 50 + planetCount * 6 + (stellarProfile.mode !== 'single' ? 10 : 0);
+
+  const starfieldDensity = 0.35 + (traits.rarityTier === 'mythic'
+    ? 0.5
+    : traits.rarityTier === 'legendary'
+      ? 0.4
+      : traits.rarityTier === 'epic'
+        ? 0.3
+        : traits.rarityTier === 'rare'
+          ? 0.2
+          : 0.1);
+
+  const nebula = rarityConfig.nebula
+    ? {
+        colors: VISUAL_CONFIG.NEBULA.COLORS,
+        intensity: VISUAL_CONFIG.NEBULA.INTENSITY,
+        radius: spreadRadius * 1.2,
+      }
+    : undefined;
+
   return {
     planets,
     spaceDust: {
       particleCount: dustParticleCount,
-      spreadRadius: 50 + planetCount * 5,
-      colors: ['#ffffff', '#fffaf0', '#f0f8ff', '#fff8dc'],
+      spreadRadius,
+      colors: [palette.primary, palette.secondary, '#ffffff'],
     },
-    sunType,
     starfieldDensity,
-    isBinarySystem,
+    stellarProfile,
+    orbitColor: rarityConfig.orbitColor,
+    nebula,
+    rarityTier: traits.rarityTier,
   };
 }

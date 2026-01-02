@@ -1,31 +1,71 @@
-// Scoring Constants for Wallet Identity Visualizer
+const HELIUS_API_KEY = import.meta.env.VITE_HELIUS_API_KEY;
+
+export const HELIUS_CONFIG = {
+  API_KEY: HELIUS_API_KEY,
+  REST_URL: 'https://api.helius.xyz/v0',
+  RPC_URL: 'https://mainnet.helius-rpc.com',
+};
+
+export const MINT_CONFIG = {
+  PRICE_SOL: 0.01,
+  NETWORK: 'mainnet-beta',
+  COLLECTION: 'Identity Prism',
+};
+
+// Scoring + rarity system (Identity Prism 3.0)
 export const SCORING = {
-  // Base bonuses for special tokens
-  SEEKER_GENESIS_BONUS: 50,
-  CHAPTER2_PREORDER_BONUS: 30,
-  
-  // COMBO BONUS: +20 additional points when user has BOTH Seeker AND Preorder
-  COMBO_BONUS: 20,
-  
-  // Activity multipliers
-  TX_COUNT_MULTIPLIER: 0.1, // Points per transaction (capped)
-  TX_COUNT_CAP: 100,
-  
-  // Token diversity bonuses
-  UNIQUE_TOKEN_BONUS: 2, // Per unique token type
-  NFT_COLLECTION_BONUS: 1, // Per NFT owned
-  BLUE_CHIP_BONUS: 100, // Bonus for blue chip holder
-  
-  // Thresholds
-  MAX_SCORE: 1000,
-  BLUE_CHIP_THRESHOLD: 10, // NFT count to qualify as blue chip holder
+  SEEKER_GENESIS_BONUS: 200,
+  CHAPTER2_PREORDER_BONUS: 150,
+  COMBO_BONUS: 200,
+  BLUE_CHIP_BONUS: 100,
+  MEME_LORD_BONUS: 70,
+  DEFI_KING_BONUS: 70,
+
+  SOL_BALANCE_THRESHOLDS: {
+    MINOR: { amount: 0.1, bonus: 30 },
+    MAJOR: { amount: 1, bonus: 70 },
+    LEGEND: { amount: 5, bonus: 150 },
+  },
+
+  WALLET_AGE_PER_YEAR: 100,
+  WALLET_AGE_MAX: 300,
+
+  TX_COUNT_MULTIPLIER: 0.5,
+  TX_COUNT_CAP: 200, // max 400 tx * 0.5
+
+  MAX_SCORE: 1200,
+  BLUE_CHIP_THRESHOLD: 10,
 } as const;
 
-// Token Contract Addresses (Solana Mint Addresses)
-export const TOKEN_ADDRESSES = {
-  SEEKER_GENESIS: 'SeekerGenesisTokenMintAddress', // Replace with actual
-  CHAPTER2_PREORDER: '2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z', // Chapter 2 Preorder Mint
+export const RARITY_THRESHOLDS = {
+  COMMON: 200,
+  RARE: 400,
+  EPIC: 600,
+  LEGENDARY: 850,
+  MYTHIC: 1200,
 } as const;
+
+export const TOKEN_ADDRESSES = {
+  SEEKER_GENESIS_COLLECTION: 'GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te',
+  CHAPTER2_PREORDER: '2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z',
+} as const;
+
+export const MEME_COIN_MINTS = {
+  BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
+  WIF: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm',
+  POPCAT: '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr',
+} as const;
+
+export const LST_MINTS = {
+  JITOSOL: 'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn',
+  MSOL: 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So',
+} as const;
+
+export const DEFI_POSITION_HINTS = ['KM', 'KAMINO', 'DRIFT', 'HONEY', 'MARGINFI'];
+
+export const BLUE_CHIP_COLLECTION_NAMES = ['mad lads', 'solana monkey business', 'claynosaurz'];
+
+export const TREASURY_ADDRESS = 'M1nTPcUB7bYp7uC3KxA9HtxFqouBZfyqCkCmDYJLdnU';
 
 // Visual Configuration
 export const VISUAL_CONFIG = {
@@ -37,7 +77,14 @@ export const VISUAL_CONFIG = {
     COMBO_PRIMARY: '#00D4FF', // Cyan
     COMBO_SECONDARY: '#FFD700', // Gold
     DEFAULT_COLOR: '#FF6B35', // Orange
-    EMISSIVE_INTENSITY: 3,
+    EMISSIVE_INTENSITY: 20,
+    RARE_COLOR: '#8CFFE3',
+    RARE_ACCENT: '#FFD19A',
+    EPIC_COLOR: '#C3A3FF',
+    EPIC_ACCENT: '#FF7AE2',
+    LEGENDARY_COLOR: '#6AD9FF',
+    MYTHIC_PRIMARY: '#FF9C6D',
+    MYTHIC_SECONDARY: '#7F5BFF',
   },
   
   // Planet generation
@@ -66,18 +113,18 @@ export const VISUAL_CONFIG = {
   
   // Animation speeds (slow and majestic)
   ANIMATION: {
-    SUN_ROTATION: 0.001,
-    PLANET_ORBIT: 0.002,
-    PLANET_ROTATION: 0.003,
-    MOON_ORBIT: 0.005,
-    BINARY_ORBIT: 0.003,
+    SUN_ROTATION: 0.0002,
+    PLANET_ORBIT: 0.0004,
+    PLANET_ROTATION: 0.0006,
+    MOON_ORBIT: 0.0008,
+    BINARY_ORBIT: 0.0005,
   },
   
   // Post-processing (High-Clarity Cinematic - Mobile Optimized)
   POST_PROCESSING: {
-    BLOOM_INTENSITY: 1.2, // Balanced, not overwhelming
-    BLOOM_LUMINANCE_THRESHOLD: 0.85, // Only brightest parts glow
-    BLOOM_LUMINANCE_SMOOTHING: 0.4,
+    BLOOM_INTENSITY: 1.4,
+    BLOOM_LUMINANCE_THRESHOLD: 0.2,
+    BLOOM_LUMINANCE_SMOOTHING: 0.9,
     CHROMATIC_ABERRATION: 0.0005, // Very subtle, edge-only
     VIGNETTE_DARKNESS: 0.35,
     NOISE_OPACITY: 0.012,
@@ -85,14 +132,26 @@ export const VISUAL_CONFIG = {
   
   // Starfield configuration
   STARS: {
-    RADIUS: 300,
-    DEPTH: 60,
-    COUNT: 5000,
-    FACTOR: 7,
+    RADIUS: 400,
+    DEPTH: 80,
+    COUNT: 15000,
+    FACTOR: 6,
     SATURATION: 0,
     FADE: true,
   },
+  
+  ORBITS: {
+    DEFAULT: '#4488ff',
+    GOLDEN: '#ffd479',
+  },
+  
+  NEBULA: {
+    COLORS: ['#2b1055', '#7a00ff', '#ff8e53'],
+    INTENSITY: 0.65,
+  },
 } as const;
+
+export type RarityTier = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 // Planet types for visual variety
 export const PLANET_TYPES = [

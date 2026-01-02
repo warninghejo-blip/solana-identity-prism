@@ -5,7 +5,13 @@ import { EffectComposer, Bloom, ChromaticAberration, Vignette, Noise } from '@re
 import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
 import { SeekerSun } from './SeekerSun';
-import { generateSolarSystem, type PlanetData, type MoonData } from '@/lib/solarSystemGenerator';
+import {
+  generateSolarSystem,
+  type PlanetData,
+  type MoonData,
+  type SpaceDustConfig,
+  type NebulaConfig,
+} from '@/lib/solarSystemGenerator';
 import { VISUAL_CONFIG } from '@/constants';
 import type { WalletTraits } from '@/hooks/useWalletData';
 
@@ -39,7 +45,7 @@ function ResponsiveCamera() {
 }
 
 // Faint orbital path - very thin and transparent
-function OrbitPath({ radius }: { radius: number }) {
+function OrbitPath({ radius, color }: { radius: number; color: string }) {
   const points = useMemo(() => {
     const pts: THREE.Vector3[] = [];
     for (let i = 0; i <= 128; i++) {
@@ -60,12 +66,12 @@ function OrbitPath({ radius }: { radius: number }) {
 
   const lineMaterial = useMemo(() => {
     return new THREE.LineBasicMaterial({
-      color: '#4488ff',
+      color,
       transparent: true,
-      opacity: 0.03, // Even more transparent
+      opacity: 0.04,
       blending: THREE.AdditiveBlending,
     });
-  }, []);
+  }, [color]);
 
   return (
     <primitive object={new THREE.Line(lineGeometry, lineMaterial)} />
@@ -127,7 +133,7 @@ function PlanetRing({ planetSize }: { planetSize: number }) {
 }
 
 // Planet component with PBR materials
-function Planet({ planet }: { planet: PlanetData }) {
+function Planet({ planet, orbitColor }: { planet: PlanetData; orbitColor: string }) {
   const groupRef = useRef<THREE.Group>(null);
   const meshRef = useRef<THREE.Mesh>(null);
   const positionRef = useRef(new THREE.Vector3());
@@ -149,7 +155,7 @@ function Planet({ planet }: { planet: PlanetData }) {
   
   return (
     <>
-      <OrbitPath radius={planet.orbitRadius} />
+      <OrbitPath radius={planet.orbitRadius} color={orbitColor} />
       <group ref={groupRef}>
         <mesh ref={meshRef}>
           <sphereGeometry args={[planet.size, 48, 48]} />
@@ -192,11 +198,14 @@ function createCircleTexture(): THREE.Texture {
   return texture;
 }
 
-// Space dust/debris particles - CIRCULAR soft points (fixes square bug)
-function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spreadRadius: number }) {
+// Space dust/debris particles - CIRCULAR soft points with palette
+function SpaceDust({ config }: { config: SpaceDustConfig }) {
   const pointsRef = useRef<THREE.Points>(null);
+
+  const palette = config.colors && config.colors.length > 0 ? config.colors : ['#ffffff'];
   
-  const { positions, colors, sizes, circleTexture } = useMemo(() => {
+  const { positions, colors, sizes, circleTexture, count } = useMemo(() => {
+    const particleCount = config.particleCount;
     const pos = new Float32Array(particleCount * 3);
     const col = new Float32Array(particleCount * 3);
     const siz = new Float32Array(particleCount);
@@ -207,17 +216,17 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
       // Distribute in a sphere, avoiding the center
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = 10 + Math.random() * spreadRadius;
+      const r = 10 + Math.random() * config.spreadRadius;
       
       pos[i3] = r * Math.sin(phi) * Math.cos(theta);
-      pos[i3 + 1] = (Math.random() - 0.5) * spreadRadius * 0.3;
+      pos[i3 + 1] = (Math.random() - 0.5) * config.spreadRadius * 0.3;
       pos[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
       
-      // Varied colors - warm white to cool white
-      const warmth = Math.random();
-      col[i3] = 0.9 + warmth * 0.1; // R
-      col[i3 + 1] = 0.9 + warmth * 0.05; // G
-      col[i3 + 2] = 0.85 + (1 - warmth) * 0.15; // B
+      const swatch = new THREE.Color(palette[Math.floor(Math.random() * palette.length)]);
+      const jitter = 0.85 + Math.random() * 0.15;
+      col[i3] = swatch.r * jitter;
+      col[i3 + 1] = swatch.g * jitter;
+      col[i3 + 2] = swatch.b * jitter;
       
       // Varied sizes
       siz[i] = 0.5 + Math.random() * 1.5;
@@ -227,9 +236,10 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
       positions: pos, 
       colors: col, 
       sizes: siz,
-      circleTexture: createCircleTexture()
+      circleTexture: createCircleTexture(),
+      count: particleCount,
     };
-  }, [particleCount, spreadRadius]);
+  }, [config.particleCount, config.spreadRadius, palette]);
   
   useFrame(() => {
     if (pointsRef.current) {
@@ -242,19 +252,19 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
       <bufferGeometry>
         <bufferAttribute
           attach="attributes-position"
-          count={particleCount}
+          count={count}
           array={positions}
           itemSize={3}
         />
         <bufferAttribute
           attach="attributes-color"
-          count={particleCount}
+          count={count}
           array={colors}
           itemSize={3}
         />
         <bufferAttribute
           attach="attributes-size"
-          count={particleCount}
+          count={count}
           array={sizes}
           itemSize={1}
         />
@@ -273,18 +283,50 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
   );
 }
 
-// High-fidelity starfield - crisp white points
-function Starfield() {
+// High-fidelity starfield - density aware
+function Starfield({ density }: { density: number }) {
+  const count = Math.max(
+    2000,
+    Math.floor(VISUAL_CONFIG.STARS.COUNT * density)
+  );
   return (
     <Stars
       radius={VISUAL_CONFIG.STARS.RADIUS}
       depth={VISUAL_CONFIG.STARS.DEPTH}
-      count={VISUAL_CONFIG.STARS.COUNT}
+      count={count}
       factor={VISUAL_CONFIG.STARS.FACTOR}
       saturation={VISUAL_CONFIG.STARS.SATURATION}
       fade={VISUAL_CONFIG.STARS.FADE}
       speed={0.2}
     />
+  );
+}
+
+// Nebula glow for mythic systems
+function Nebula({ config }: { config?: NebulaConfig }) {
+  const groupRef = useRef<THREE.Group>(null);
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y = state.clock.elapsedTime * 0.005;
+    }
+  });
+  if (!config) return null;
+  
+  return (
+    <group ref={groupRef}>
+      {config.colors.map((color, index) => (
+        <mesh key={`${color}-${index}`} scale={1 + index * 0.15}>
+          <sphereGeometry args={[config.radius, 32, 32]} />
+          <meshBasicMaterial
+            color={color}
+            transparent
+            opacity={config.intensity / ((index + 1) * 2)}
+            blending={THREE.AdditiveBlending}
+            depthWrite={false}
+          />
+        </mesh>
+      ))}
+    </group>
   );
 }
 
@@ -323,24 +365,24 @@ function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
       <ambientLight intensity={0.03} />
       
       {/* High-fidelity starfield - crisp white points */}
-      <Starfield />
+      <Starfield density={systemData.starfieldDensity} />
       
-      {/* The Sun - single core with procedural uniqueness */}
+      {/* Nebula for mythic tiers */}
+      <Nebula config={systemData.nebula} />
+      
+      {/* The Sun system */}
       <SeekerSun 
-        sunType={systemData.sunType} 
+        profile={systemData.stellarProfile}
         walletSeed={walletAddress || 'default'}
       />
       
       {/* Planets */}
       {systemData.planets.map((planet) => (
-        <Planet key={planet.id} planet={planet} />
+        <Planet key={planet.id} planet={planet} orbitColor={systemData.orbitColor} />
       ))}
       
       {/* Space dust - circular particles */}
-      <SpaceDust 
-        particleCount={systemData.spaceDust.particleCount} 
-        spreadRadius={systemData.spaceDust.spreadRadius} 
-      />
+      <SpaceDust config={systemData.spaceDust} />
       
       {/* Camera controls with smooth damping */}
       <OrbitControls

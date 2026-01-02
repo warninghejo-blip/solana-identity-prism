@@ -2,9 +2,10 @@ import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
 import * as THREE from 'three';
 import { VISUAL_CONFIG } from '@/constants';
+import type { StellarProfile } from '@/lib/solarSystemGenerator';
 
 interface SeekerSunProps {
-  sunType: 'combo' | 'seeker' | 'preorder' | 'default';
+  profile: StellarProfile;
   walletSeed?: string;
 }
 
@@ -324,8 +325,13 @@ function VolumetricBeam({
   );
 }
 
-// Binary star system for combo effect - two distinct cores orbiting
-function BinaryStar() {
+interface Palette {
+  primary: string;
+  secondary: string;
+}
+
+// Binary star or pulsar system with palette-driven colors
+function BinaryStar({ palette, mode, intensity }: { palette: Palette; mode: StellarProfile['mode']; intensity: number }) {
   const groupRef = useRef<THREE.Group>(null);
   const star1Ref = useRef<THREE.Mesh>(null);
   const star2Ref = useRef<THREE.Mesh>(null);
@@ -334,25 +340,25 @@ function BinaryStar() {
   
   const uniforms1 = useMemo(() => ({
     uTime: { value: 0 },
-    uColor1: { value: new THREE.Color(VISUAL_CONFIG.SUN.SEEKER_COLOR) },
-    uColor2: { value: new THREE.Color('#006688') },
-    uIntensity: { value: 4 },
-    uNoiseScale: { value: 2.5 },
+    uColor1: { value: new THREE.Color(palette.primary) },
+    uColor2: { value: new THREE.Color(palette.secondary).multiplyScalar(0.65) },
+    uIntensity: { value: intensity },
+    uNoiseScale: { value: mode === 'binaryPulsar' ? 3 : 2.4 },
     uTurbulence: { value: 1.1 },
-    uPulseSpeed: { value: 0.4 },
+    uPulseSpeed: { value: mode === 'binaryPulsar' ? 0.65 : 0.4 },
     uSunspotDensity: { value: 0.5 },
-  }), []);
+  }), [palette.primary, palette.secondary, mode, intensity]);
   
   const uniforms2 = useMemo(() => ({
     uTime: { value: 0 },
-    uColor1: { value: new THREE.Color(VISUAL_CONFIG.SUN.PREORDER_COLOR) },
-    uColor2: { value: new THREE.Color('#ffaa00') },
-    uIntensity: { value: 4 },
-    uNoiseScale: { value: 2.2 },
+    uColor1: { value: new THREE.Color(palette.secondary) },
+    uColor2: { value: new THREE.Color(palette.primary).multiplyScalar(0.7) },
+    uIntensity: { value: intensity * 0.9 },
+    uNoiseScale: { value: mode === 'binaryPulsar' ? 2.9 : 2 },
     uTurbulence: { value: 0.9 },
     uPulseSpeed: { value: 0.5 },
     uSunspotDensity: { value: 0.6 },
-  }), []);
+  }), [palette.primary, palette.secondary, mode, intensity]);
   
   useFrame((state) => {
     const time = state.clock.elapsedTime;
@@ -361,9 +367,8 @@ function BinaryStar() {
       groupRef.current.rotation.y += VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * 0.5;
     }
     
-    // Orbital motion for binary stars
-    const orbitRadius = 2.2;
-    const orbitSpeed = VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * 30;
+    const orbitRadius = mode === 'binaryPulsar' ? 3 : 2.2;
+    const orbitSpeed = VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * (mode === 'binaryPulsar' ? 45 : 30);
     
     if (star1Ref.current) {
       star1Ref.current.position.x = Math.cos(time * orbitSpeed) * orbitRadius;
@@ -387,9 +392,8 @@ function BinaryStar() {
   
   return (
     <group ref={groupRef}>
-      {/* Cyan star (Seeker) */}
       <mesh ref={star1Ref}>
-        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.75, 64, 64]} />
+        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * (mode === 'binaryPulsar' ? 0.6 : 0.75), 64, 64]} />
         <shaderMaterial
           ref={material1Ref}
           vertexShader={plasmaVertexShader}
@@ -399,9 +403,8 @@ function BinaryStar() {
         />
       </mesh>
       
-      {/* Gold star (Preorder) */}
       <mesh ref={star2Ref}>
-        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * 0.65, 64, 64]} />
+        <sphereGeometry args={[VISUAL_CONFIG.SUN.BASE_SIZE * (mode === 'binaryPulsar' ? 0.5 : 0.65), 64, 64]} />
         <shaderMaterial
           ref={material2Ref}
           vertexShader={plasmaVertexShader}
@@ -411,27 +414,15 @@ function BinaryStar() {
         />
       </mesh>
       
-      {/* Subtle energy bridge between stars */}
-      <mesh rotation={[Math.PI / 2, 0, 0]}>
-        <torusGeometry args={[2.2, 0.05, 16, 100]} />
-        <meshBasicMaterial
-          color="#ffffff"
-          transparent
-          opacity={0.08}
-          blending={THREE.AdditiveBlending}
-        />
-      </mesh>
-      
-      {/* Central lights */}
       <pointLight 
-        color={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
-        intensity={80} 
+        color={palette.primary} 
+        intensity={intensity * 20} 
         distance={80} 
         decay={2} 
       />
       <pointLight 
-        color={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
-        intensity={60} 
+        color={palette.secondary} 
+        intensity={intensity * 15} 
         distance={80} 
         decay={2} 
       />
@@ -439,8 +430,69 @@ function BinaryStar() {
   );
 }
 
-// Volumetric pulsar beams for combo - soft light shafts (replaces cone artifacts)
-function PulsarBeams() {
+function PlasmaBridge({ colors, pulsar }: { colors: Palette; pulsar?: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.y = state.clock.elapsedTime * 0.05;
+    }
+  });
+  
+  return (
+    <group ref={groupRef} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh>
+        <torusGeometry args={[2.3, pulsar ? 0.18 : 0.12, 32, 200]} />
+        <meshBasicMaterial
+          color={colors.primary}
+          transparent
+          opacity={0.18}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+      <mesh>
+        <torusGeometry args={[1.5, pulsar ? 0.12 : 0.08, 32, 200]} />
+        <meshBasicMaterial
+          color={colors.secondary}
+          transparent
+          opacity={0.12}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </mesh>
+    </group>
+  );
+}
+
+function NovaBridge({ colors, pulsar }: { colors: Palette; pulsar?: boolean }) {
+  const groupRef = useRef<THREE.Group>(null);
+  
+  useFrame((state) => {
+    if (groupRef.current) {
+      groupRef.current.rotation.x = Math.sin(state.clock.elapsedTime * 0.2) * 0.1;
+    }
+  });
+  
+  return (
+    <group ref={groupRef}>
+      <VolumetricBeam 
+        position={[0, 6, 0]} 
+        color={colors.primary}
+        intensity={pulsar ? 0.9 : 0.6}
+      />
+      <VolumetricBeam 
+        position={[0, -6, 0]} 
+        color={colors.secondary}
+        rotation={[Math.PI, 0, 0]}
+        intensity={pulsar ? 0.9 : 0.6}
+      />
+    </group>
+  );
+}
+
+// Volumetric pulsar beams for mythic tier
+function PulsarBeams({ colors }: { colors: Palette }) {
   const groupRef = useRef<THREE.Group>(null);
   
   useFrame((state) => {
@@ -451,98 +503,55 @@ function PulsarBeams() {
   
   return (
     <group ref={groupRef}>
-      {/* Upper volumetric beam */}
       <VolumetricBeam 
         position={[0, 12, 0]} 
-        color={VISUAL_CONFIG.SUN.SEEKER_COLOR}
-        intensity={0.6}
+        color={colors.primary}
+        intensity={0.8}
       />
-      
-      {/* Lower volumetric beam */}
       <VolumetricBeam 
         position={[0, -12, 0]} 
-        color={VISUAL_CONFIG.SUN.PREORDER_COLOR}
+        color={colors.secondary}
         rotation={[Math.PI, 0, 0]}
-        intensity={0.6}
+        intensity={0.8}
       />
     </group>
   );
 }
 
-export function SeekerSun({ sunType, walletSeed = 'default' }: SeekerSunProps) {
+export function SeekerSun({ profile, walletSeed = 'default' }: SeekerSunProps) {
   const proceduralParams = useMemo(() => getProceduralParams(walletSeed), [walletSeed]);
+  const { palette, mode, intensity, plasmaBridge, novaBridge, novaBridgeColors } = profile;
+  const bridgePalette = novaBridgeColors ?? palette;
+  const baseLightIntensity = intensity * 25;
   
-  switch (sunType) {
-    case 'combo':
-      return (
-        <group>
-          <BinaryStar />
-          <PulsarBeams />
-        </group>
-      );
-      
-    case 'seeker':
-      return (
-        <group>
-          <SunCore 
-            color1={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
-            color2="#004466"
-            intensity={4}
-            noiseScale={2.5}
-            turbulence={1.2}
-            pulseSpeed={0.4}
-            sunspotDensity={0.4}
-          />
-          <pointLight 
-            color={VISUAL_CONFIG.SUN.SEEKER_COLOR} 
-            intensity={100} 
-            distance={80} 
-            decay={2} 
-          />
-        </group>
-      );
-      
-    case 'preorder':
-      return (
-        <group>
-          <SunCore 
-            color1={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
-            color2="#cc8800"
-            intensity={4}
-            noiseScale={2.2}
-            turbulence={1.0}
-            pulseSpeed={0.5}
-            sunspotDensity={0.5}
-          />
-          <pointLight 
-            color={VISUAL_CONFIG.SUN.PREORDER_COLOR} 
-            intensity={100} 
-            distance={80} 
-            decay={2} 
-          />
-        </group>
-      );
-      
-    default:
-      // Procedurally unique sun based on wallet address
-      return (
-        <group>
-          <SunCore 
-            color1={VISUAL_CONFIG.SUN.DEFAULT_COLOR} 
-            color2="#cc3300"
-            intensity={3}
-            noiseScale={proceduralParams.noiseScale}
-            turbulence={proceduralParams.turbulence}
-            pulseSpeed={proceduralParams.pulseSpeed}
-            sunspotDensity={proceduralParams.sunspotDensity}
-          />
-          <pointLight 
-            color={VISUAL_CONFIG.SUN.DEFAULT_COLOR} 
-            intensity={80} 
-            distance={60} 
-            decay={2} 
-          />
-        </group>
-      );
+  if (mode === 'single') {
+    return (
+      <group>
+        <SunCore 
+          color1={palette.primary}
+          color2={palette.secondary}
+          intensity={intensity}
+          noiseScale={proceduralParams.noiseScale}
+          turbulence={proceduralParams.turbulence}
+          pulseSpeed={proceduralParams.pulseSpeed}
+          sunspotDensity={proceduralParams.sunspotDensity}
+        />
+        <pointLight 
+          color={palette.primary} 
+          intensity={baseLightIntensity} 
+          distance={70} 
+          decay={2} 
+        />
+      </group>
+    );
   }
+  
+  return (
+    <group>
+      <BinaryStar palette={palette} mode={mode} intensity={intensity} />
+      {plasmaBridge && <PlasmaBridge colors={bridgePalette} pulsar={mode === 'binaryPulsar'} />}
+      {novaBridge && <NovaBridge colors={bridgePalette} pulsar={mode === 'binaryPulsar'} />}
+      {mode === 'binaryPulsar' && <PulsarBeams colors={bridgePalette} />}
+    </group>
+  );
 }
