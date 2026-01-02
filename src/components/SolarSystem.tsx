@@ -1,6 +1,6 @@
 import { useRef, useMemo, Suspense } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Stars, OrbitControls, useTexture } from '@react-three/drei';
+import { Canvas, useFrame, useThree } from '@react-three/fiber';
+import { Stars, OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration, Vignette, Noise } from '@react-three/postprocessing';
 import { BlendFunction } from 'postprocessing';
 import * as THREE from 'three';
@@ -11,9 +11,10 @@ import type { WalletTraits } from '@/hooks/useWalletData';
 
 interface SolarSystemProps {
   traits: WalletTraits;
+  walletAddress?: string;
 }
 
-// Faint orbital path
+// Faint orbital path - very thin and transparent
 function OrbitPath({ radius }: { radius: number }) {
   const points = useMemo(() => {
     const pts: THREE.Vector3[] = [];
@@ -37,8 +38,9 @@ function OrbitPath({ radius }: { radius: number }) {
     return new THREE.LineBasicMaterial({
       color: '#4488ff',
       transparent: true,
-      opacity: 0.08,
+      opacity: 0.04, // Much more transparent
       blending: THREE.AdditiveBlending,
+      linewidth: 0.5, // Thinner
     });
   }, []);
 
@@ -64,7 +66,7 @@ function Moon({ moon, planetPosition }: { moon: MoonData; planetPosition: THREE.
   
   return (
     <mesh ref={ref}>
-      <sphereGeometry args={[moon.size, 16, 16]} />
+      <sphereGeometry args={[moon.size, 24, 24]} />
       <meshStandardMaterial
         color={moon.color}
         roughness={0.8}
@@ -127,7 +129,7 @@ function Planet({ planet }: { planet: PlanetData }) {
       <OrbitPath radius={planet.orbitRadius} />
       <group ref={groupRef}>
         <mesh ref={meshRef}>
-          <sphereGeometry args={[planet.size, 32, 32]} />
+          <sphereGeometry args={[planet.size, 48, 48]} />
           <meshStandardMaterial
             color={planet.type.color}
             roughness={planet.type.roughness}
@@ -209,17 +211,38 @@ function SpaceDust({ particleCount, spreadRadius }: { particleCount: number; spr
   );
 }
 
+// High-fidelity starfield - rendered BEFORE post-processing layer
+function Starfield() {
+  return (
+    <Stars
+      radius={VISUAL_CONFIG.STARS.RADIUS}
+      depth={VISUAL_CONFIG.STARS.DEPTH}
+      count={VISUAL_CONFIG.STARS.COUNT}
+      factor={VISUAL_CONFIG.STARS.FACTOR}
+      saturation={VISUAL_CONFIG.STARS.SATURATION}
+      fade={VISUAL_CONFIG.STARS.FADE}
+      speed={0.3}
+    />
+  );
+}
+
 // Main scene content
-function SolarSystemScene({ traits }: SolarSystemProps) {
+function SolarSystemScene({ traits, walletAddress }: SolarSystemProps) {
   const systemData = useMemo(() => generateSolarSystem(traits), [traits]);
   
   return (
     <>
       {/* Ambient light for subtle fill */}
-      <ambientLight intensity={0.05} />
+      <ambientLight intensity={0.03} />
       
-      {/* The Sun */}
-      <SeekerSun sunType={systemData.sunType} />
+      {/* High-fidelity starfield - placed first, crisp white points */}
+      <Starfield />
+      
+      {/* The Sun - single core with procedural uniqueness */}
+      <SeekerSun 
+        sunType={systemData.sunType} 
+        walletSeed={walletAddress || 'default'}
+      />
       
       {/* Planets */}
       {systemData.planets.map((planet) => (
@@ -232,35 +255,24 @@ function SolarSystemScene({ traits }: SolarSystemProps) {
         spreadRadius={systemData.spaceDust.spreadRadius} 
       />
       
-      {/* High-fidelity starfield background */}
-      <Stars
-        radius={100}
-        depth={50}
-        count={5000}
-        factor={4}
-        saturation={0}
-        fade
-        speed={0.5}
-      />
-      
       {/* Camera controls with smooth damping */}
       <OrbitControls
         enablePan={false}
         enableZoom={true}
         minDistance={5}
         maxDistance={80}
-        dampingFactor={0.05}
+        dampingFactor={0.03}
         enableDamping
         autoRotate
-        autoRotateSpeed={0.1}
+        autoRotateSpeed={0.08}
       />
       
-      {/* Cinematic post-processing */}
+      {/* Cinematic post-processing - High Clarity */}
       <EffectComposer>
         <Bloom
           intensity={VISUAL_CONFIG.POST_PROCESSING.BLOOM_INTENSITY}
           luminanceThreshold={VISUAL_CONFIG.POST_PROCESSING.BLOOM_LUMINANCE_THRESHOLD}
-          luminanceSmoothing={0.9}
+          luminanceSmoothing={VISUAL_CONFIG.POST_PROCESSING.BLOOM_LUMINANCE_SMOOTHING}
           mipmapBlur
         />
         <ChromaticAberration
@@ -269,16 +281,16 @@ function SolarSystemScene({ traits }: SolarSystemProps) {
             VISUAL_CONFIG.POST_PROCESSING.CHROMATIC_ABERRATION,
             VISUAL_CONFIG.POST_PROCESSING.CHROMATIC_ABERRATION
           )}
-          radialModulation={false}
-          modulationOffset={0}
+          radialModulation={true}
+          modulationOffset={0.8}
         />
         <Vignette
           darkness={VISUAL_CONFIG.POST_PROCESSING.VIGNETTE_DARKNESS}
-          offset={0.3}
+          offset={0.25}
         />
         <Noise
           opacity={VISUAL_CONFIG.POST_PROCESSING.NOISE_OPACITY}
-          blendFunction={BlendFunction.OVERLAY}
+          blendFunction={BlendFunction.SOFT_LIGHT}
         />
       </EffectComposer>
     </>
@@ -290,12 +302,12 @@ function LoadingFallback() {
   return (
     <mesh>
       <sphereGeometry args={[1, 16, 16]} />
-      <meshBasicMaterial color="#333" wireframe />
+      <meshBasicMaterial color="#222" wireframe />
     </mesh>
   );
 }
 
-export function SolarSystem({ traits }: SolarSystemProps) {
+export function SolarSystem({ traits, walletAddress }: SolarSystemProps) {
   return (
     <div className="w-full h-full absolute inset-0 bg-black">
       <Canvas
@@ -303,12 +315,13 @@ export function SolarSystem({ traits }: SolarSystemProps) {
         gl={{ 
           antialias: true, 
           toneMapping: THREE.ACESFilmicToneMapping,
-          toneMappingExposure: 1.2,
+          toneMappingExposure: 1.0,
+          powerPreference: 'high-performance',
         }}
         dpr={[1, 2]}
       >
         <Suspense fallback={<LoadingFallback />}>
-          <SolarSystemScene traits={traits} />
+          <SolarSystemScene traits={traits} walletAddress={walletAddress} />
         </Suspense>
       </Canvas>
     </div>

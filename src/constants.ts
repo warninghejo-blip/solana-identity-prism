@@ -73,13 +73,24 @@ export const VISUAL_CONFIG = {
     BINARY_ORBIT: 0.003,
   },
   
-  // Post-processing
+  // Post-processing (High-Clarity Cinematic)
   POST_PROCESSING: {
-    BLOOM_INTENSITY: 2.5,
-    BLOOM_LUMINANCE_THRESHOLD: 0.2,
-    CHROMATIC_ABERRATION: 0.002,
-    VIGNETTE_DARKNESS: 0.5,
-    NOISE_OPACITY: 0.02,
+    BLOOM_INTENSITY: 1.2, // Balanced, not overwhelming
+    BLOOM_LUMINANCE_THRESHOLD: 0.85, // Only brightest parts glow
+    BLOOM_LUMINANCE_SMOOTHING: 0.4,
+    CHROMATIC_ABERRATION: 0.0008, // Very subtle, edge-only
+    VIGNETTE_DARKNESS: 0.4,
+    NOISE_OPACITY: 0.015,
+  },
+  
+  // Starfield configuration
+  STARS: {
+    RADIUS: 300,
+    DEPTH: 60,
+    COUNT: 5000,
+    FACTOR: 7,
+    SATURATION: 0,
+    FADE: true,
   },
 } as const;
 
