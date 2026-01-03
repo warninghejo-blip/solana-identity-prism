@@ -1,34 +1,35 @@
-import { useEffect, useMemo, useState, useCallback } from 'react';
-import { SolarSystem } from '@/components/SolarSystem';
-import { useWalletData } from '@/hooks/useWalletData';
-import { usePhantomWallet } from '@/hooks/usePhantomWallet';
-import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { useEffect, useMemo, useState, useCallback } from "react";
+import { SolarSystem } from "@/components/SolarSystem";
+import { useWalletData } from "@/hooks/useWalletData";
+import { usePhantomWallet } from "@/hooks/usePhantomWallet";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
   Loader2,
-  PlugZap,
   Sparkles,
-  Shield,
-  Star,
-  Wallet,
-  Timer,
-  Coins,
-  Orbit,
   AlertCircle,
-} from 'lucide-react';
-import { MINT_CONFIG } from '@/constants';
+  PlugZap,
+  ArrowLeft,
+  Trophy,
+  Star,
+  Globe,
+  Moon,
+  Database,
+} from "lucide-react";
 
 function shortenAddress(address?: string | null) {
-  if (!address) return 'Demo Wallet';
+  if (!address || address === "0xDemo...Wallet") return "Cosmic Explorer";
   return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }
 
+type ViewState = "landing" | "scanning" | "ready";
+
 const Index = () => {
-  const [phase, setPhase] = useState<'landing' | 'warping' | 'explorer'>('landing');
   const [manualAddress, setManualAddress] = useState<string | undefined>();
-  const [formAddress, setFormAddress] = useState('');
-  const [warpKey, setWarpKey] = useState(0);
+  const [formAddress, setFormAddress] = useState("");
+  const [isWarping, setIsWarping] = useState(false);
+  const [viewState, setViewState] = useState<ViewState>("landing");
 
   const {
     address: connectedAddress,
@@ -37,406 +38,285 @@ const Index = () => {
     hasProvider,
     error: walletError,
     connectWallet,
-    disconnectWallet,
   } = usePhantomWallet();
 
-  const resolvedAddress = isConnected ? connectedAddress ?? undefined : manualAddress;
+  const resolvedAddress = manualAddress || (isConnected ? connectedAddress : undefined) || undefined;
   const walletData = useWalletData(resolvedAddress);
   const { traits, score, address, isLoading, error: dataError } = walletData;
   const displayAddress = useMemo(() => shortenAddress(address), [address]);
   const combinedError = walletError ?? dataError;
-  const showExplorer = phase === 'explorer';
-  const warpActive = phase === 'warping';
+  const isExplorerMode = Boolean(manualAddress);
 
-  const triggerWarp = useCallback(() => {
-    setWarpKey((prev) => prev + 1);
-    setPhase('warping');
-  }, []);
+  // Unified State Machine for UI
+  useEffect(() => {
+    if (!resolvedAddress) {
+      setViewState("landing");
+      return;
+    }
+
+    if (isWarping || isLoading || !traits) {
+      setViewState("scanning");
+    } else {
+      // Small delay before ready to ensure system data settled
+      const timer = setTimeout(() => setViewState("ready"), 200);
+      return () => clearTimeout(timer);
+    }
+  }, [resolvedAddress, isWarping, isLoading, traits]);
+
+  // Handle Wallet Changes
+  useEffect(() => {
+    if (isConnected && !manualAddress) {
+      setIsWarping(true);
+      setTimeout(() => setIsWarping(false), 2500);
+    }
+  }, [connectedAddress, isConnected]);
 
   const handleManualExplore = () => {
     const trimmed = formAddress.trim();
     if (!trimmed) return;
     setManualAddress(trimmed);
-    triggerWarp();
+    setIsWarping(true);
+    setTimeout(() => setIsWarping(false), 2500);
   };
 
-  useEffect(() => {
-    if (isConnected) {
-      setManualAddress(undefined);
-      triggerWarp();
-    } else {
-      setPhase('landing');
-    }
-  }, [isConnected, triggerWarp]);
-
-  useEffect(() => {
-    if (phase === 'warping') {
-      const timeout = setTimeout(() => setPhase('explorer'), 1800);
-      return () => clearTimeout(timeout);
-    }
-    return undefined;
-  }, [phase]);
-
-  const achievements = useMemo(
-    () => [
-      { label: 'Seeker Genesis', active: traits.hasSeeker, detail: 'Origin starholder', icon: Sparkles },
-      { label: 'Chapter 2 Preorder', active: traits.hasPreorder, detail: 'Chronicle aligned', icon: Orbit },
-      { label: 'Combo Holder', active: traits.hasCombo, detail: 'Binary unlock', icon: Star },
-      { label: 'Blue Chip Signal', active: traits.isBlueChip, detail: 'Prestige collections', icon: Shield },
-      { label: 'DeFi King', active: traits.isDeFiKing, detail: 'Power liquidity', icon: Coins },
-      { label: 'Meme Lord', active: traits.isMemeLord, detail: 'Culture amplifier', icon: Sparkles },
-    ],
-    [traits],
-  );
-
-  const statCards = useMemo(
-    () => [
-      {
-        label: 'SOL Balance',
-        value: `${traits.solBalance.toFixed(2)} SOL`,
-        hint: traits.solBonusApplied ? `+${traits.solBonusApplied} bonus` : 'No bonus yet',
-      },
-      {
-        label: 'Wallet Age',
-        value: `${traits.walletAgeYears} yrs`,
-        hint: traits.walletAgeBonus ? `+${traits.walletAgeBonus} pts` : 'New wallet',
-      },
-      {
-        label: 'Activity (30d)',
-        value: `${traits.avgTxPerDay30d.toFixed(1)}/day`,
-        hint: traits.hyperactiveDegen ? 'Hyperactive Degen' : 'Calibrating',
-      },
-      {
-        label: 'Dormancy',
-        value: traits.daysSinceLastTx ? `${Math.floor(traits.daysSinceLastTx)} days` : 'Fresh',
-        hint: traits.diamondHands ? 'Diamond hands' : 'Live feed',
-      },
-    ],
-    [traits],
-  );
-
-  const [mintState, setMintState] = useState<'idle' | 'minting' | 'success' | 'error'>('idle');
-  const [mintError, setMintError] = useState<string | null>(null);
-
+  const [mintState, setMintState] = useState<"idle" | "minting" | "success" | "error">("idle");
   const handleMint = useCallback(() => {
-    setMintState('minting');
-    // Add minting logic here
-    setTimeout(() => {
-      setMintState('success');
-    }, 2000);
+    setMintState("minting");
+    setTimeout(() => setMintState("success"), 2000);
   }, []);
+
+  const celestialStats = useMemo(() => {
+    const defaultStats = [
+      { id: "stars", label: "STARS", value: 0, icon: <Star className="h-3 w-3 text-yellow-400" /> },
+      { id: "planets", label: "PLANETS", value: 0, icon: <Globe className="h-3 w-3 text-cyan-400" /> },
+      { id: "moons", label: "MOONS", value: 0, icon: <Moon className="h-3 w-3 text-slate-400" /> },
+    ];
+    if (!traits) return defaultStats;
+    
+    let stars = traits.hasCombo || traits.rarityTier === "mythic" || traits.rarityTier === "legendary" ? 2 : 1;
+    let planetBase = Math.floor(traits.uniqueTokenCount / 10);
+    let minPlanets = traits.rarityTier === "mythic" ? 8 : traits.rarityTier === "legendary" ? 6 : traits.rarityTier === "epic" ? 5 : traits.rarityTier === "rare" ? 4 : 1;
+    let planets = Math.min(Math.max(minPlanets, planetBase), 10);
+    let moonsPerPlanet = Math.min(Math.floor(traits.nftCount / 50), 4);
+    let totalMoons = planets * moonsPerPlanet;
+
+    return [
+      { id: "stars", label: "STARS", value: stars, icon: <Star className="h-3 w-3 text-yellow-400" /> },
+      { id: "planets", label: "PLANETS", value: planets, icon: <Globe className="h-3 w-3 text-cyan-400" /> },
+      { id: "moons", label: "MOONS", value: totalMoons, icon: <Moon className="h-3 w-3 text-slate-400" /> },
+    ];
+  }, [traits]);
+
+  const achievements = useMemo(() => {
+    if (!traits) return [];
+    const list = [];
+    if (traits.hasCombo) list.push({ id: "og_combo", label: "OG COMBO" });
+    if (traits.hasSeeker) list.push({ id: "seeker", label: "SEEKER GENESIS" });
+    if (traits.hasPreorder) list.push({ id: "preorder", label: "PREORDER HODLER" });
+    if (traits.diamondHands) list.push({ id: "diamond_hands", label: "DIAMOND HANDS" });
+    if (traits.hyperactiveDegen) list.push({ id: "degen", label: "HYPERACTIVE" });
+    if (traits.isMemeLord) list.push({ id: "meme_lord", label: "MEME LORD" });
+    if (traits.isDeFiKing) list.push({ id: "defi_king", label: "DEFI KING" });
+    if (traits.isBlueChip) list.push({ id: "whale", label: "WHALE" });
+    return list;
+  }, [traits]);
+
+  const statCards = useMemo(() => {
+    if (!traits) return [];
+    return [
+      { label: "SOL", value: `${traits.solBalance.toFixed(2)}` },
+      { label: "AGE", value: `${traits.walletAgeDays}d` },
+      { label: "TX/D", value: `${traits.avgTxPerDay30d.toFixed(1)}` },
+      { label: "NFTs", value: traits.nftCount.toString() },
+    ];
+  }, [traits]);
 
   return (
     <div className="identity-shell">
-      <SolarSystem traits={traits} walletAddress={address} />
+      <SolarSystem traits={traits} walletAddress={address} isWarping={isWarping} />
       <div className="identity-gradient" />
 
-      <div className="identity-hud">
-        <div className="hud-top">
-          <div className="brand-mark">
-            <div className="brand-emblem">
-              <Sparkles className="h-4 w-4 text-cyan-200" />
-            </div>
-            <div>
-              <p className="heading">Identity Prism</p>
-              <p className="subheading">Stellar Intelligence Bureau</p>
-            </div>
-          </div>
-          <Badge variant="outline" className="badge-ambient">
-            Scoring 3.0
-          </Badge>
-        </div>
-
-        {showExplorer ? (
-          <ExplorerHud
-            score={score}
-            addressLabel={displayAddress}
-            isLoading={isLoading}
-            traits={traits}
-            onDisconnect={disconnectWallet}
-            isConnected={isConnected}
-          />
-        ) : (
-          <LandingOverlay
-            formAddress={formAddress}
-            setFormAddress={setFormAddress}
-            onExplore={handleManualExplore}
-            connectWallet={connectWallet}
-            isConnecting={isConnecting}
-            hasProvider={hasProvider}
-            combinedError={combinedError}
-          />
-        )}
-      </div>
-
-      {warpActive && <WarpOverlay key={warpKey} />}
-
-      {showExplorer && (
+      {viewState !== "ready" ? (
+        <LandingOverlay
+          formAddress={formAddress}
+          setFormAddress={setFormAddress}
+          onExplore={handleManualExplore}
+          connectWallet={connectWallet}
+          isConnecting={isConnecting}
+          hasProvider={hasProvider}
+          combinedError={combinedError}
+          isScanning={viewState === "scanning"}
+        />
+      ) : (
         <>
-          <GlassSidebar
-            achievements={achievements}
-            statCards={statCards}
-            score={walletData?.score ?? 0}
-            isLoading={walletData?.isLoading || false}
-            traits={walletData?.traits}
-            mintState={mintState}
-            mintError={mintError}
-            onMint={handleMint}
-            isConnected={isConnected}
-          />
-          {walletData?.error && (
-            <div className="error-banner">
-              <AlertCircle className="h-4 w-4" />
-              <span>{walletData.error}</span>
+          <nav className="top-nav-prism mobile-nav">
+            <div className="nav-brand-box">
+              <img src="/phav.png" alt="Identity Prism" className="h-8 w-8 object-contain mr-2" />
+              <div className="celestial-stats-top hidden sm:flex">
+                {celestialStats.map(stat => (
+                  <div key={stat.id} className="top-stat-item">
+                    <span className="stat-label">{stat.label}</span>
+                    <div className="stat-val-row">
+                      {stat.icon}
+                      <span className="stat-val">{stat.value}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
-          )}
-          <SignalFooter traits={traits} />
+            <div className="nav-right">
+              <div className="debug-asset-pill hidden md:flex items-center gap-2 px-3 py-1 bg-white/5 border border-white/10 rounded-full mr-4 opacity-50">
+                <Database className="h-3 w-3" />
+                <span className="text-[10px] font-bold text-white/60 uppercase">Assets: {traits?.totalAssetsCount || 0}</span>
+              </div>
+              <WalletMultiButton className="prism-wallet-btn compact" />
+            </div>
+          </nav>
+
+          <div className="mobile-stats-overlay sm:hidden">
+            {celestialStats.map(stat => (
+              <div key={stat.id} className="mobile-stat-pill">
+                {stat.icon}
+                <span>{stat.value}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="mobile-hud-container">
+            <aside className="prism-hud-bottom glass-panel">
+              <div className="hud-header-compact">
+                <div className="identity-info-row">
+                  <div className="rank-badge-mini">
+                    <span className={`tier-dot ${traits?.rarityTier || "common"}`} />
+                    {traits?.rarityTier?.toUpperCase() || "SCANNING..."}
+                  </div>
+                  <span className="address-text-mini">{displayAddress}</span>
+                </div>
+                <div className="score-mini">
+                  <span className="score-num-mini">{isLoading ? "…" : score}</span>
+                  <span className="score-label-mini">IDENTITY SCORE</span>
+                </div>
+              </div>
+
+              {achievements.length > 0 && (
+                <div className="achievements-hud">
+                  <div className="ach-label">
+                    <Trophy className="h-3 w-3 mr-1" /> ACHIEVEMENTS
+                  </div>
+                  <div className="ach-grid">
+                    {achievements.map(ach => (
+                      <div key={ach.id} className={`ach-tag ${ach.id}`}>
+                        {ach.label}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="vitals-scroll-x">
+                {statCards.map((card) => (
+                  <div key={card.label} className="vital-card-mobile">
+                    <p className="vital-label-mini">{card.label}</p>
+                    <p className="vital-val-mini">{card.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="hud-actions-mobile">
+                <Button
+                  onClick={handleMint}
+                  disabled={mintState === "minting" || isLoading || !isConnected || isExplorerMode}
+                  className="mint-btn-mobile"
+                >
+                  {mintState === "idle" && <span>MINT IDENTITY</span>}
+                  {mintState === "minting" && <Loader2 className="h-4 w-4 animate-spin" />}
+                  {mintState === "success" && <span>IDENTITY SECURED</span>}
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  onClick={() => {
+                    setManualAddress(undefined);
+                    setFormAddress("");
+                    setViewState("landing");
+                  }}
+                  className="exit-btn-mobile"
+                >
+                  <ArrowLeft className="h-4 w-4 mr-1" />
+                  {isExplorerMode ? "EXIT" : "BACK"}
+                </Button>
+              </div>
+            </aside>
+          </div>
         </>
+      )}
+
+      {walletData?.error && (
+        <div className="prism-error-toast">
+          <AlertCircle className="h-4 w-4" />
+          <span>{walletData.error}</span>
+        </div>
       )}
     </div>
   );
 };
 
-export default Index;
+function LandingOverlay({ formAddress, setFormAddress, onExplore, connectWallet, isConnecting, hasProvider, combinedError, isScanning }: any) {
+  if (isScanning) {
+    return (
+      <div className="warp-overlay">
+        <div className="warp-content">
+          <div className="warp-text">DECODING IDENTITY</div>
+          <div className="warp-subtext">Scanning Solana neural network...</div>
+          <Loader2 className="h-8 w-8 animate-spin mt-6 mx-auto text-cyan-400 opacity-50" />
+        </div>
+      </div>
+    );
+  }
 
-interface LandingOverlayProps {
-  formAddress: string;
-  setFormAddress: (value: string) => void;
-  onExplore: () => void;
-  connectWallet: () => Promise<void>;
-  isConnecting: boolean;
-  hasProvider: boolean;
-  combinedError: string | null;
-}
-
-function LandingOverlay({
-  formAddress,
-  setFormAddress,
-  onExplore,
-  connectWallet,
-  isConnecting,
-  hasProvider,
-  combinedError,
-}: LandingOverlayProps) {
   return (
-    <div className="landing-wrap">
-      <div className="landing-grid" />
-      <div className="landing-card glass-panel">
-        <p className="landing-eyebrow">Initiate Stellar Scan</p>
-        <h1 className="landing-title">Decode your cosmic signature.</h1>
-        <p className="landing-copy">
-          Identity Prism triangulates your on-chain gravity to generate a bespoke solar system.
-          Connect or input any wallet to warp into the explorer deck.
-        </p>
-        <div className="landing-actions">
-          <Input
-            value={formAddress}
-            onChange={(event) => setFormAddress(event.target.value)}
-            placeholder="Enter Solana address"
-            className="landing-input"
-          />
-          <Button size="lg" className="landing-explore" onClick={onExplore} disabled={!formAddress.trim()}>
-            <Sparkles className="mr-2 h-4 w-4" />
-            Warp to Address
-          </Button>
+    <div className="landing-wrap-v2">
+      <div className="landing-card-v2 glass-panel">
+        <div className="landing-header-v2">
+          <div className="glow-icon-container">
+            <img src="/phav.png" alt="Identity Prism" className="h-24 w-24 mx-auto mb-6 glow-logo" />
+          </div>
+          <p className="landing-eyebrow">Identity Prism v2.1</p>
+          <h1 className="landing-title-v2">Decode your cosmic signature.</h1>
         </div>
-        <div className="landing-divider">or</div>
-        {!hasProvider ? (
-          <Button asChild size="lg" variant="outline" className="landing-connect outline">
-            <a href="https://phantom.app/download" target="_blank" rel="noreferrer">
-              <PlugZap className="mr-2 h-4 w-4" />
-              Install Phantom
-            </a>
-          </Button>
-        ) : (
-          <Button size="lg" variant="secondary" onClick={connectWallet} disabled={isConnecting}>
-            {isConnecting ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <PlugZap className="mr-2 h-4 w-4" />}
-            {isConnecting ? 'Establishing link…' : 'Connect Phantom'}
-          </Button>
-        )}
-        {combinedError && <p className="landing-error">{combinedError}</p>}
-        <div className="landing-tags">
-          <span>Nova Bridge Visuals</span>
-          <span>Binary Star Detection</span>
-          <span>Mythic Nebulae</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+        
+        <div className="landing-actions-v2">
+          <div className="input-group-v2">
+            <Input
+              value={formAddress}
+              onChange={(e) => setFormAddress(e.target.value)}
+              placeholder="Enter Address or .sol"
+              className="landing-input-v2"
+            />
+            <Button className="explore-btn-v2" onClick={onExplore} disabled={!formAddress.trim()}>
+              <Sparkles className="h-5 w-5" />
+            </Button>
+          </div>
+          
+          <div className="divider-v2">OR</div>
 
-interface ExplorerHudProps {
-  score: number;
-  addressLabel: string;
-  isLoading: boolean;
-  traits: ReturnType<typeof useWalletData>['traits'];
-  onDisconnect: () => void;
-  isConnected: boolean;
-}
-
-function ExplorerHud({ score, addressLabel, isLoading, traits, onDisconnect, isConnected }: ExplorerHudProps) {
-  return (
-    <div className="explorer-hud glass-panel">
-      <div className="hud-score">
-        <p className="hud-label">Identity Score</p>
-        <p className="hud-value">{isLoading ? '…' : score}</p>
-        <p className="hud-address">{addressLabel}</p>
-      </div>
-      <div className="hud-badges">
-        {traits.hasSeeker && <HudBadge label="+50 Seeker Genesis" tone="cyan" />}
-        {traits.hasPreorder && <HudBadge label="+30 Chapter 2" tone="gold" />}
-        {traits.hasCombo && <HudBadge label="+20 Nova Combo" tone="aurora" />}
-        {traits.isBlueChip && <HudBadge label="+100 Blue Chip" tone="purple" />}
-      </div>
-      <div className="hud-controls">
-        <div className="chip">
-          <Wallet className="h-4 w-4 text-white/70" />
-          <span>{traits.uniqueTokenCount} tokens</span>
-        </div>
-        <div className="chip">
-          <Star className="h-4 w-4 text-white/70" />
-          <span>{traits.nftCount} NFTs</span>
-        </div>
-        <div className="chip">
-          <Timer className="h-4 w-4 text-white/70" />
-          <span>{traits.txCount.toLocaleString()} tx</span>
-        </div>
-        {isConnected && (
-          <Button variant="ghost" size="sm" className="text-white/70 hover:text-white" onClick={onDisconnect}>
-            Disconnect
-          </Button>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface GlassSidebarProps {
-  achievements: {
-    label: string;
-    active: boolean;
-    detail: string;
-    icon: React.ComponentType<{ className?: string }>;
-  }[];
-  statCards: { label: string; value: string; hint: string }[];
-  score: number;
-  isLoading: boolean;
-  traits: ReturnType<typeof useWalletData>['traits'];
-  mintState: 'idle' | 'minting' | 'success' | 'error';
-  mintError: string | null;
-  onMint: () => void;
-  isConnected: boolean;
-}
-
-function GlassSidebar({
-  achievements,
-  statCards,
-  score,
-  isLoading,
-  traits,
-  mintState,
-  mintError,
-  onMint,
-  isConnected,
-}: GlassSidebarProps) {
-  return (
-    <aside className="glass-sidebar glass-panel">
-      <div className="sidebar-heading">
-        <p>Explorer Status</p>
-        <span>{isLoading ? 'Syncing...' : 'Live'}</span>
-      </div>
-
-      <div className="sidebar-score">
-        <p className="label">Score Vector</p>
-        <p className="value">{isLoading ? '…' : score}</p>
-        <span className="rarity-chip">{traits.rarityTier.toUpperCase()}</span>
-      </div>
-
-      <div className="sidebar-section">
-        <p className="label">Achievements</p>
-        <div className="sidebar-list">
-          {achievements.map(({ label, active, detail, icon: Icon }) => (
-            <div key={label} className={`achievement-card ${active ? 'active' : ''}`}>
-              <div className="achievement-icon">
-                <Icon className="h-4 w-4" />
-              </div>
-              <div>
-                <p>{label}</p>
-                <span>{detail}</span>
-              </div>
-              <div className={`status-dot ${active ? 'on' : 'off'}`} />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="sidebar-section">
-        <div className="mint-control">
-          <Button
-            size="lg"
-            variant="secondary"
-            onClick={onMint}
-            disabled={mintState === 'minting' || isLoading || !isConnected}
-            className="mint-button"
-          >
-            {mintState === 'idle' && <span>Mint Identity Prism</span>}
-            {mintState === 'minting' && <Loader2 className="h-4 w-4 animate-spin" />}
-            {mintState === 'success' && <span>✓ Minted!</span>}
-            {mintState === 'error' && <span>Error</span>}
-          </Button>
-          {mintState === 'error' && mintError && (
-            <p className="mint-error">{mintError}</p>
+          {!hasProvider ? (
+            <Button asChild className="connect-btn-v2 outline">
+              <a href="https://phantom.app/download" target="_blank" rel="noreferrer">
+                Install Phantom
+              </a>
+            </Button>
+          ) : (
+            <Button className="connect-btn-v2" onClick={connectWallet} disabled={isConnecting}>
+              {isConnecting ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlugZap className="h-5 w-5 mr-2" />}
+              {isConnecting ? "Establishing link…" : "Connect Phantom"}
+            </Button>
           )}
-          <p className="mint-hint">
-            {MINT_CONFIG.PRICE_SOL} SOL • Metadata includes all traits
-          </p>
         </div>
+        
+        {combinedError && <p className="landing-error-v2">{combinedError}</p>}
       </div>
-
-      <div className="sidebar-section">
-        <p className="label">Vitals</p>
-        <div className="stat-grid">
-          {statCards.map((card) => (
-            <div key={card.label} className="stat-card">
-              <p>{card.label}</p>
-              <h4>{card.value}</h4>
-              <span>{card.hint}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function HudBadge({ label, tone }: { label: string; tone: 'cyan' | 'gold' | 'aurora' | 'purple' }) {
-  return <span className={`hud-badge hud-badge-${tone}`}>{label}</span>;
-}
-
-function SignalFooter({ traits }: { traits: ReturnType<typeof useWalletData>['traits'] }) {
-  const highlights = [
-    `${Math.min(Math.floor(traits.uniqueTokenCount / 10), 10)} Planets`,
-    `${Math.floor(traits.nftCount / 50)} Moons`,
-    traits.hasCombo ? 'Binary Star Active' : 'Solo Sun',
-    traits.isMemeLord ? 'Meme Lord Resonance' : 'Awaiting Meme Signal',
-  ];
-
-  return (
-    <div className="signal-footer glass-panel">
-      {highlights.map((highlight) => (
-        <span key={highlight}>{highlight}</span>
-      ))}
     </div>
   );
 }
 
-function WarpOverlay() {
-  return (
-    <div className="warp-overlay">
-      <div className="warp-core" />
-      {Array.from({ length: 15 }).map((_, index) => (
-        <div key={index} className="warp-line" style={{ left: `${(index / 15) * 100}%` }} />
-      ))}
-    </div>
-  );
-}
+export default Index;

@@ -1,20 +1,21 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState } from "react";
 import {
   HELIUS_CONFIG,
   MEME_COIN_MINTS,
-  SCORING,
   TOKEN_ADDRESSES,
-  LST_MINTS,
-  DEFI_POSITION_HINTS,
   BLUE_CHIP_COLLECTION_NAMES,
-  RARITY_THRESHOLDS,
-  type RarityTier,
-} from '@/constants';
+  DEFI_POSITION_HINTS,
+  LST_MINTS,
+} from "@/constants";
+import { useConnection } from "@solana/wallet-adapter-react";
+import { PublicKey, ConfirmedSignatureInfo } from "@solana/web3.js";
+
+export type RarityTier = "common" | "rare" | "epic" | "legendary" | "mythic";
 
 export interface WalletTraits {
   hasSeeker: boolean;
   hasPreorder: boolean;
-  hasCombo: boolean; // Both Seeker AND Preorder
+  hasCombo: boolean;
   isBlueChip: boolean;
   isDeFiKing: boolean;
   uniqueTokenCount: number;
@@ -28,9 +29,10 @@ export interface WalletTraits {
   daysSinceLastTx: number | null;
   solBalance: number;
   solBonusApplied: number;
-  walletAgeYears: number;
+  walletAgeDays: number;
   walletAgeBonus: number;
   rarityTier: RarityTier;
+  totalAssetsCount: number;
 }
 
 export interface WalletData {
@@ -41,403 +43,242 @@ export interface WalletData {
   error: string | null;
 }
 
-// Calculate the total score based on wallet traits
 export function calculateScore(traits: WalletTraits): number {
   let score = 0;
-  
-  if (traits.hasSeeker) score += SCORING.SEEKER_GENESIS_BONUS;
-  if (traits.hasPreorder) score += SCORING.CHAPTER2_PREORDER_BONUS;
-  if (traits.hasCombo) score += SCORING.COMBO_BONUS;
-  if (traits.isBlueChip) score += SCORING.BLUE_CHIP_BONUS;
-  if (traits.isMemeLord) score += SCORING.MEME_LORD_BONUS;
-  if (traits.isDeFiKing) score += SCORING.DEFI_KING_BONUS;
-  score += traits.solBonusApplied;
-  score += traits.walletAgeBonus;
-
-  // Transaction activity bonus (capped at 400 tx => 200 pts)
-  const txBonus = Math.min(
-    traits.txCount * SCORING.TX_COUNT_MULTIPLIER,
-    SCORING.TX_COUNT_CAP
-  );
-  score += txBonus;
-  
-  // Cap the total score
-  return Math.min(Math.round(score), SCORING.MAX_SCORE);
+  if (traits.hasSeeker) score += 200;
+  if (traits.hasPreorder) score += 150;
+  if (traits.hasCombo) score += 200;
+  if (traits.isBlueChip) score += 100;
+  if (traits.isMemeLord) score += 70;
+  if (traits.isDeFiKing) score += 70;
+  score += (traits.solBonusApplied || 0);
+  score += (traits.walletAgeBonus || 0);
+  score += Math.min((traits.txCount || 0) * 0.5, 200);
+  return Math.round(score);
 }
 
-const DAY_MS = 86_400_000;
-const THIRTY_DAYS_MS = DAY_MS * 30;
-const YEAR_MS = DAY_MS * 365;
-const DEMO_WALLET_ADDRESS = '0xDemo...Wallet';
-const MEME_SYMBOLS = Object.keys(MEME_COIN_MINTS) as (keyof typeof MEME_COIN_MINTS)[];
-const LST_MINT_VALUES = Object.values(LST_MINTS);
 const SOL_LAMPORTS = 1_000_000_000;
-const DEFI_HINTS = DEFI_POSITION_HINTS.map((hint) => hint.toLowerCase());
+const DEMO_WALLET_ADDRESS = "0xDemo...Wallet";
+const MEME_SYMBOLS = Object.keys(MEME_COIN_MINTS) as (keyof typeof MEME_COIN_MINTS)[];
+const LST_ADDRESSES = Object.values(LST_MINTS);
 
-type WalletTraitsCore = Omit<WalletTraits, 'rarityTier'>;
-interface NormalizedToken extends Record<string, any> {
-  mint: string;
-  normalizedAmount: number;
-  symbol?: string;
-  name?: string;
-  tokenAccount?: Record<string, any>;
-}
-
-const disconnectedWalletState = buildDisconnectedWalletData();
-
-export function useWalletData(address?: string): WalletData {
-  const [walletData, setWalletData] = useState<WalletData>(disconnectedWalletState);
+export function useWalletData(address?: string) {
+  const { connection } = useConnection();
+  const [walletData, setWalletData] = useState<WalletData>(buildDisconnectedWalletData());
 
   useEffect(() => {
-    if (!address) {
+    if (!address || address === DEMO_WALLET_ADDRESS) {
       setWalletData(buildDisconnectedWalletData());
       return;
     }
 
-    const controller = new AbortController();
+    let cancelled = false;
 
-    (async () => {
-      setWalletData(prev => ({
-        ...prev,
-        address,
-        isLoading: true,
-        error: null,
-      }));
-
+    const fetchData = async () => {
       try {
-        const traits = await fetchWalletInsights(address, controller.signal);
-
-        if (!controller.signal.aborted) {
-          setWalletData({
-            address,
-            traits,
-            score: calculateScore(traits),
-            isLoading: false,
-            error: null,
-          });
+        if (!HELIUS_CONFIG.API_KEY) {
+          console.error("CRITICAL: Helius API Key is missing.");
+          setWalletData((prev) => ({ ...prev, isLoading: false, error: "API Key Missing" }));
+          return;
         }
-      } catch (error) {
-        if (controller.signal.aborted) return;
 
-        const fallbackTraits = buildFallbackTraits(address);
+        console.log("%c--- 🚀 INITIATING COSMIC SCAN v3.0 (SUPERNOVA) ---", "color: #22d3ee; font-weight: bold; font-size: 14px;");
+        const publicKey = new PublicKey(address);
+        setWalletData((prev) => ({ ...prev, address, isLoading: true, error: null }));
 
-        setWalletData({
-          address,
-          traits: fallbackTraits,
-          score: calculateScore(fallbackTraits),
-          isLoading: false,
-          error: error instanceof Error ? error.message : 'Failed to fetch wallet data',
+        // 1. Transaction Fetching (Aggressive - up to 10k txs)
+        const fetchSignatures = async (pubkey: PublicKey) => {
+          let allSignatures: ConfirmedSignatureInfo[] = [];
+          let lastSig: string | undefined = undefined;
+          
+          for (let i = 0; i < 10; i++) { // Max 10,000 transactions
+            try {
+              const sigs: ConfirmedSignatureInfo[] = await connection.getSignaturesForAddress(pubkey, { 
+                limit: 1000,
+                before: lastSig 
+              });
+              if (sigs.length === 0) break;
+              allSignatures = [...allSignatures, ...sigs];
+              lastSig = sigs[sigs.length - 1].signature;
+              if (sigs.length < 1000) break;
+            } catch (e) {
+              console.warn("Signature fetch error at page", i, e);
+              break;
+            }
+          }
+          return allSignatures;
+        };
+
+        const [balance, signatures, tokenAccountsResponse] = await Promise.all([
+          connection.getBalance(publicKey),
+          fetchSignatures(publicKey),
+          connection.getParsedTokenAccountsByOwner(publicKey, {
+            programId: new PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA")
+          })
+        ]);
+
+        const solBalance = balance / SOL_LAMPORTS;
+        const txCount = signatures.length;
+        let firstTxDate = new Date();
+        if (signatures.length > 0) {
+          const oldest = signatures[signatures.length - 1];
+          if (oldest.blockTime) firstTxDate = new Date(oldest.blockTime * 1000);
+        }
+        const walletAgeDays = Math.floor((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24));
+        const avgTxPerDay30d = txCount / 30;
+
+        // 2. DAS API - Enhanced Asset Fetching
+        const response = await fetch(HELIUS_CONFIG.RPC_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: "prism-scan",
+            method: "getAssetsByOwner",
+            params: {
+              ownerAddress: address,
+              page: 1,
+              limit: 1000,
+              displayOptions: { 
+                showCollectionMetadata: true, 
+                showAuthorities: true,
+                showMetadata: true,
+                showFungible: true
+              },
+            },
+          }),
         });
-      }
-    })().catch((error) => {
-      setWalletData({
-        address,
-        traits: null,
-        score: 0,
-        rarityTier: 'Unknown',
-        isLoading: false,
-        error: error.message || 'Failed to fetch wallet data',
-      });
-    });
+        
+        const data = await response.json();
+        const assets = data.result?.items || [];
+        const totalAssetsCount = assets.length;
+        
+        console.log(`%c[Scan] DAS: ${totalAssetsCount} total assets found.`, "color: #22d3ee; font-weight: bold;");
 
-    return () => controller.abort();
-  }, [address]);
+        let nftCount = 0;
+        let uniqueTokenCount = 0;
+        let hasSeeker = false;
+        let hasPreorder = false;
+        let isBlueChip = false;
+        let isDeFiKing = false;
+
+        // 3. Analysis Loop
+        assets.forEach((asset: any) => {
+          const content = asset.content || {};
+          const metadata = content.metadata || asset.content?.metadata || {};
+          const name = (metadata.name || content.metadata?.name || asset.id || "").toLowerCase();
+          const symbol = (metadata.symbol || content.metadata?.symbol || "").toLowerCase();
+          
+          const mint = asset.id;
+          const isPreorderMint = mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER;
+          const collection = asset.grouping?.find((g: any) => g.group_key === "collection")?.group_value;
+          const isSeekerCollection = collection === TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION;
+
+          const auths = (asset.authorities || []).map((a: any) => a.address);
+          const creators = (metadata.creators || asset.creators || content.metadata?.creators || []).map((c: any) => typeof c === 'string' ? c : c.address);
+
+          // Seeker Detection
+          if (isSeekerCollection || auths.includes(TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) || creators.includes(TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) || name.includes("seeker")) {
+            console.log(`%c[!!!] SEEKER DETECTED: ${name}`, "color: #22d3ee; font-weight: 900;");
+            hasSeeker = true;
+          }
+
+          // Preorder Detection
+          if (isPreorderMint || (name.includes("chapter") && name.includes("2") && name.includes("preorder"))) {
+            console.log(`%c[!!!] PREORDER DETECTED: ${name}`, "color: #fbbf24; font-weight: 900;");
+            hasPreorder = true;
+          }
+
+          // NFT Logic (Decimals 0)
+          const iface = (asset.interface || "").toUpperCase();
+          const tokenInfo = asset.token_info || {};
+          const decimals = tokenInfo.decimals ?? (isFungibleAsset(asset) ? 9 : 0);
+          
+          const isExplicitNFT = iface.includes("NFT") || iface.includes("PROGRAMMABLE") || iface === "CUSTOM" || asset.compression?.compressed === true;
+          const isLikelyNFT = decimals === 0 && (metadata.name || content.links?.image || asset.grouping?.length > 0);
+          const isKnownFungible = iface === "FUNGIBLETOKEN" || iface === "FUNGIBLEASSET" || (tokenInfo.supply > 1 && decimals > 0);
+
+          if (isExplicitNFT || (isLikelyNFT && !isKnownFungible)) {
+            nftCount++;
+            if (BLUE_CHIP_COLLECTION_NAMES.some(bc => name.includes(bc) || (collection && collection.toLowerCase().includes(bc)))) {
+              isBlueChip = true;
+            }
+          } else {
+            uniqueTokenCount++;
+          }
+
+          if (DEFI_POSITION_HINTS.some(hint => name.includes(hint.toLowerCase()))) {
+            isDeFiKing = true;
+          }
+          if (LST_ADDRESSES.includes(mint)) {
+            isDeFiKing = true;
+          }
+        });
+
+        // 4. SPL Fallback Check
+        tokenAccountsResponse.value.forEach((ta: any) => {
+          const info = ta.account.data.parsed.info;
+          if (info.tokenAmount.uiAmount > 0) {
+            const mint = info.mint;
+            if (mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER) hasPreorder = true;
+            if (LST_ADDRESSES.includes(mint)) isDeFiKing = true;
+            if (!assets.some((a: any) => a.id === mint)) {
+              uniqueTokenCount++;
+              // If it has decimals 0 and was missed, it's an NFT
+              if (info.tokenAmount.decimals === 0) nftCount++;
+            }
+          }
+        });
+
+        const hasCombo = hasSeeker && hasPreorder;
+        const memeCoinsHeld = MEME_SYMBOLS.filter((s) =>
+          assets.some((a: any) => a.id === MEME_COIN_MINTS[s]) ||
+          tokenAccountsResponse.value.some((ta: any) => ta.account.data.parsed.info.mint === MEME_COIN_MINTS[s])
+        );
+        const isMemeLord = memeCoinsHeld.length > 3;
+
+        const solBonusApplied = solBalance >= 5 ? 150 : solBalance >= 1 ? 70 : solBalance >= 0.1 ? 30 : 0;
+        const walletAgeBonus = Math.min(Math.floor((walletAgeDays / 365) * 100), 300);
+
+        const traits: WalletTraits = {
+          hasSeeker, hasPreorder, hasCombo, isBlueChip, isDeFiKing,
+          uniqueTokenCount, nftCount, txCount, memeCoinsHeld, isMemeLord,
+          hyperactiveDegen: avgTxPerDay30d >= 8,
+          diamondHands: walletAgeDays >= 60,
+          avgTxPerDay30d, daysSinceLastTx: null,
+          solBalance, solBonusApplied, walletAgeDays, walletAgeBonus,
+          rarityTier: "common", totalAssetsCount,
+        };
+
+        const score = calculateScore(traits);
+        traits.rarityTier = score >= 851 ? "mythic" : score >= 651 ? "legendary" : score >= 451 ? "epic" : score >= 201 ? "rare" : "common";
+
+        if (cancelled) return;
+        setWalletData({ address, traits, score, isLoading: false, error: null });
+        console.log(`%c[Scan Final] NFTs: ${nftCount} | Tx: ${txCount} | Score: ${score}`, "color: #fff; background: #22d3ee; padding: 4px; border-radius: 4px;");
+
+      } catch (error) {
+        console.error("Scan Error:", error);
+        if (cancelled) return;
+        setWalletData({ address: address || "", traits: null, score: 0, isLoading: false, error: "Cosmic synchronization failed." });
+      }
+    };
+
+    fetchData();
+    return () => { cancelled = true; };
+  }, [address, connection]);
 
   return walletData;
 }
 
-async function fetchWalletInsights(address: string, signal?: AbortSignal): Promise<WalletTraits> {
-  if (!HELIUS_CONFIG.API_KEY) {
-    throw new Error('Missing VITE_HELIUS_API_KEY');
-  }
-
-  const restBase = `${HELIUS_CONFIG.REST_URL}/addresses/${address}`;
-  const apiSuffix = `?api-key=${HELIUS_CONFIG.API_KEY}`;
-
-  const [balancesRes, nftsRes, txRes, seekerAssets] = await Promise.all([
-    fetchJson(`${restBase}/balances${apiSuffix}`, signal),
-    fetchJson(`${restBase}/nfts${apiSuffix}`, signal).catch(() => null),
-    fetchJson(`${restBase}/transactions${apiSuffix}&limit=200`, signal).catch(() => null),
-    searchCollectionOwnership(address, TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION, signal).catch(() => null),
-  ]);
-
-  const tokensRaw = Array.isArray(balancesRes?.tokens) ? balancesRes.tokens : [];
-  const tokens: NormalizedToken[] = tokensRaw.map((token: any) => ({
-    ...token,
-    normalizedAmount: normalizeTokenAmount(token),
-  }));
-
-  const nfts = Array.isArray(nftsRes?.nfts) ? nftsRes.nfts : Array.isArray(nftsRes) ? nftsRes : [];
-  const transactions = Array.isArray(txRes?.transactions) ? txRes.transactions : Array.isArray(txRes) ? txRes : [];
-
-  const nftCount = nfts.length;
-  const uniqueTokenCount = tokens.filter(token => token.normalizedAmount > 0).length;
-  const hasPreorder = tokens.some(token => token.mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER && token.normalizedAmount > 0);
-  const hasSeeker = Boolean(
-    seekerAssets && Array.isArray(seekerAssets) && seekerAssets.length > 0
-  ) || nfts.some((nft: any) => matchesCollection(nft, TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION));
-  const hasCombo = hasSeeker && hasPreorder;
-
-  const memeCoinsHeld = MEME_SYMBOLS.filter((symbol) =>
-    tokens.some((token) => token.mint === MEME_COIN_MINTS[symbol] && token.normalizedAmount > 0)
-  );
-  const isMemeLord = memeCoinsHeld.length >= 3; // holds all three meme tokens
-
-  const txTimestamps = transactions
-    .map(parseTxTimestamp)
-    .filter((value): value is number => typeof value === 'number');
-  const now = Date.now();
-  const lastTxMs = txTimestamps.length ? Math.max(...txTimestamps) : null;
-  const daysSinceLastTx = lastTxMs ? (now - lastTxMs) / DAY_MS : null;
-  const txCount30d = txTimestamps.filter(ts => now - ts <= THIRTY_DAYS_MS).length;
-  const hyperactiveDegen = txCount30d >= SCORING.HYPERACTIVE_THRESHOLD_30D;
-  const diamondHands = typeof daysSinceLastTx === 'number' && daysSinceLastTx >= SCORING.DIAMOND_HANDS_DAYS;
-  const earliestTxMs = txTimestamps.length ? Math.min(...txTimestamps) : null;
-  const walletAgeYears = earliestTxMs ? Math.min(
-    Math.floor((now - earliestTxMs) / YEAR_MS),
-    SCORING.WALLET_AGE_MAX / SCORING.WALLET_AGE_PER_YEAR
-  ) : 0;
-  const walletAgeBonus = walletAgeYears * SCORING.WALLET_AGE_PER_YEAR;
-
-  const txCount = typeof txRes?.total === 'number' ? txRes.total : transactions.length;
-  const solBalance = extractSolBalance(balancesRes);
-  const solBonusApplied = getSolBonus(solBalance);
-  const isBlueChip = detectBlueChipCollections(nfts);
-  const isDeFiKing = detectDeFiPresence(tokens, nfts, transactions);
-
-  const traitCore: WalletTraitsCore = {
-    hasSeeker,
-    hasPreorder,
-    hasCombo,
-    isBlueChip,
-    isDeFiKing,
-    uniqueTokenCount,
-    nftCount,
-    txCount,
-    memeCoinsHeld,
-    isMemeLord,
-    hyperactiveDegen,
-    diamondHands,
-    avgTxPerDay30d: txCount30d / 30,
-    daysSinceLastTx,
-    solBalance,
-    solBonusApplied,
-    walletAgeYears,
-    walletAgeBonus,
-  };
-
-  const baseTraits: WalletTraits = {
-    ...traitCore,
-    rarityTier: 'common',
-  };
-
-  const previewScore = calculateScore(baseTraits);
-  const rarityTier = determineRarityTier(previewScore);
-
-  return {
-    ...baseTraits,
-    rarityTier,
-  };
-}
-
-async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(url, { signal });
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Helius request failed (${response.status}): ${errorText || response.statusText}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-async function searchCollectionOwnership(address: string, collectionId: string, signal?: AbortSignal) {
-  if (!collectionId) return null;
-
-  const response = await fetch(`${HELIUS_CONFIG.RPC_URL}/?api-key=${HELIUS_CONFIG.API_KEY}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      jsonrpc: '2.0',
-      id: `collection-${collectionId}`,
-      method: 'searchAssets',
-      params: {
-        ownerAddress: address,
-        grouping: [{ groupKey: 'collection', groupValue: collectionId }],
-        page: 1,
-        limit: 1,
-      },
-    }),
-    signal,
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Helius searchAssets failed (${response.status}): ${errorText || response.statusText}`);
-  }
-
-  const payload = await response.json();
-  return payload?.result?.items ?? [];
-}
-
-function matchesCollection(asset: any, collectionId: string): boolean {
-  if (!asset || !collectionId) return false;
-  if (asset.collection?.address === collectionId) return true;
-  if (asset.collectionKey === collectionId) return true;
-  if (asset.grouping && Array.isArray(asset.grouping)) {
-    return asset.grouping.some((group: any) => group?.group_value === collectionId || group?.groupValue === collectionId);
-  }
-  return false;
-}
-
-function normalizeTokenAmount(token: any): number {
-  const decimalsRaw = token?.decimals;
-  const decimals = typeof decimalsRaw === 'number' ? decimalsRaw : Number(decimalsRaw ?? 0);
-  const amountRaw = token?.amount;
-  const raw = typeof amountRaw === 'string' ? parseFloat(amountRaw) : Number(amountRaw ?? 0);
-  if (!decimals) return raw;
-  return raw / Math.pow(10, decimals);
-}
-
-function parseTxTimestamp(tx: any): number | null {
-  if (!tx) return null;
-  const raw = tx.timestamp ?? tx.blockTime ?? tx.block_time ?? null;
-  if (raw === null || raw === undefined) return null;
-  const numeric = typeof raw === 'string' ? Number(raw) : raw;
-  if (Number.isNaN(numeric)) return null;
-  return numeric > 1e12 ? numeric : numeric * 1000;
+function isFungibleAsset(asset: any): boolean {
+  const iface = (asset.interface || "").toUpperCase();
+  if (iface === "FUNGIBLETOKEN" || iface === "FUNGIBLEASSET") return true;
+  const supply = asset.token_info?.supply || 0;
+  const decimals = asset.token_info?.decimals || 0;
+  return decimals > 0 || supply > 1;
 }
 
 function buildDisconnectedWalletData(): WalletData {
-  const traits = buildFallbackTraits();
-  return {
-    address: DEMO_WALLET_ADDRESS,
-    traits,
-    score: calculateScore(traits),
-    isLoading: false,
-    error: null,
-  };
-}
-
-function buildFallbackTraits(address?: string): WalletTraits {
-  const seed = address
-    ? address.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0)
-    : 777;
-
-  const hasSeeker = seed % 3 === 0;
-  const hasPreorder = seed % 2 === 0;
-  const hasCombo = hasSeeker && hasPreorder;
-  const nftCount = (seed % 500) + 50;
-  const uniqueTokenCount = (seed % 80) + 15;
-  const txCount = (seed % 2000) + 250;
-  const memeCoinsHeld = MEME_SYMBOLS.filter((_, index) => ((seed >> index) & 1) === 1);
-  const isMemeLord = memeCoinsHeld.length >= 3;
-  const daysSinceLastTx = (seed % 120);
-  const hyperactiveDegen = (seed % 100) > 55;
-  const diamondHands = daysSinceLastTx >= SCORING.DIAMOND_HANDS_DAYS;
-  const solBalance = (seed % 20) + 0.25;
-  const solBonusApplied = getSolBonus(solBalance);
-  const walletAgeYears = Math.min(3, (seed % 4) + 1);
-  const walletAgeBonus = walletAgeYears * SCORING.WALLET_AGE_PER_YEAR;
-  const isBlueChip = seed % 3 === 0;
-  const isDeFiKing = seed % 4 === 0;
-
-  const traitCore: WalletTraitsCore = {
-    hasSeeker,
-    hasPreorder,
-    hasCombo,
-    isBlueChip,
-    isDeFiKing,
-    uniqueTokenCount,
-    nftCount,
-    txCount,
-    memeCoinsHeld,
-    isMemeLord,
-    hyperactiveDegen,
-    diamondHands,
-    avgTxPerDay30d: txCount / 30,
-    daysSinceLastTx,
-    solBalance,
-    solBonusApplied,
-    walletAgeYears,
-    walletAgeBonus,
-  };
-
-  const baseTraits: WalletTraits = {
-    ...traitCore,
-    rarityTier: 'common',
-  };
-
-  const rarityTier = determineRarityTier(calculateScore(baseTraits));
-
-  return {
-    ...baseTraits,
-    rarityTier,
-  };
-}
-
-function extractSolBalance(balancesRes: any): number {
-  const nativeLamports =
-    Number(balancesRes?.nativeBalance?.lamports ?? balancesRes?.lamports ?? 0);
-  return nativeLamports / SOL_LAMPORTS;
-}
-
-function getSolBonus(solBalance: number): number {
-  const thresholds = Object.values(SCORING.SOL_BALANCE_THRESHOLDS).sort(
-    (a, b) => b.amount - a.amount
-  );
-  for (const threshold of thresholds) {
-    if (solBalance >= threshold.amount) {
-      return threshold.bonus;
-    }
-  }
-  return 0;
-}
-
-function detectBlueChipCollections(nfts: any[]): boolean {
-  return nfts.some((nft) => {
-    const candidates = [
-      nft?.collection?.name,
-      nft?.collection?.family,
-      nft?.content?.metadata?.collection?.name,
-      nft?.name,
-    ]
-      .filter(Boolean)
-      .map((value) => String(value).toLowerCase());
-
-    return BLUE_CHIP_COLLECTION_NAMES.some((name) =>
-      candidates.some((candidate) => candidate.includes(name))
-    );
-  });
-}
-
-function detectDeFiPresence(tokens: NormalizedToken[], nfts: any[], transactions: any[]): boolean {
-  const hasLST = tokens.some(
-    (token) => LST_MINT_VALUES.includes(token.mint) && token.normalizedAmount > 0
-  );
-  if (hasLST) return true;
-
-  const hasTokenHint = tokens.some((token) => {
-    const text = `${token.symbol ?? ''} ${token.name ?? ''}`.toLowerCase();
-    return DEFI_HINTS.some((hint) => text.includes(hint));
-  });
-  if (hasTokenHint) return true;
-
-  const hasNftHint = nfts.some((nft) => {
-    const text = `${nft?.collection?.name ?? ''} ${nft?.name ?? ''}`.toLowerCase();
-    return DEFI_HINTS.some((hint) => text.includes(hint));
-  });
-  if (hasNftHint) return true;
-
-  const hasTxHint = transactions.some((tx) => {
-    const text = JSON.stringify(tx?.description ?? tx?.type ?? tx ?? '').toLowerCase();
-    return DEFI_HINTS.some((hint) => text.includes(hint));
-  });
-  return hasTxHint;
-}
-
-function determineRarityTier(score: number): RarityTier {
-  if (score >= RARITY_THRESHOLDS.MYTHIC) return 'mythic';
-  if (score >= RARITY_THRESHOLDS.LEGENDARY) return 'legendary';
-  if (score >= RARITY_THRESHOLDS.EPIC) return 'epic';
-  if (score >= RARITY_THRESHOLDS.RARE) return 'rare';
-  return 'common';
+  return { address: DEMO_WALLET_ADDRESS, traits: null, score: 0, isLoading: false, error: null };
 }

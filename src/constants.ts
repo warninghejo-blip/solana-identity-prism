@@ -3,7 +3,7 @@ const HELIUS_API_KEY = import.meta.env.VITE_HELIUS_API_KEY;
 export const HELIUS_CONFIG = {
   API_KEY: HELIUS_API_KEY,
   REST_URL: 'https://api.helius.xyz/v0',
-  RPC_URL: 'https://mainnet.helius-rpc.com',
+  RPC_URL: `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`,
 };
 
 export const MINT_CONFIG = {
@@ -20,6 +20,8 @@ export const SCORING = {
   BLUE_CHIP_BONUS: 100,
   MEME_LORD_BONUS: 70,
   DEFI_KING_BONUS: 70,
+  HYPERACTIVE_THRESHOLD_30D: 8, // tx/day
+  DIAMOND_HANDS_DAYS: 60,
 
   SOL_BALANCE_THRESHOLDS: {
     MINOR: { amount: 0.1, bonus: 30 },
@@ -38,15 +40,18 @@ export const SCORING = {
 } as const;
 
 export const RARITY_THRESHOLDS = {
-  COMMON: 200,
-  RARE: 400,
-  EPIC: 600,
-  LEGENDARY: 850,
-  MYTHIC: 1200,
+  COMMON: 0,
+  RARE: 201,
+  EPIC: 451,
+  LEGENDARY: 651,
+  MYTHIC: 851,
 } as const;
+
+export const MAX_SCORE_CAP = 1200;
 
 export const TOKEN_ADDRESSES = {
   SEEKER_GENESIS_COLLECTION: 'GT22s89nU4iWFkNXj1Bw6uYhJJWDRPpShHt4Bk8f99Te',
+  SEEKER_MINT_AUTHORITY: 'GT2zuHVaZQYZSyQMgJPLzvkmyztfyXg2NJunqFp4p3A4',
   CHAPTER2_PREORDER: '2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z',
 } as const;
 
@@ -54,6 +59,7 @@ export const MEME_COIN_MINTS = {
   BONK: 'DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263',
   WIF: 'EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm',
   POPCAT: '7GCihgDB8fe6KNjn2MYtkzZcRjQy3t9GHdC8uHYmW2hr',
+  MEW: 'MEW1VNoNHn99uH86fUvYvU42o9YkS9uH9Tst6t2291',
 } as const;
 
 export const LST_MINTS = {
