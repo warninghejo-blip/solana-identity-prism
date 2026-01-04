@@ -1,9 +1,7 @@
-const HELIUS_API_KEY = import.meta.env.VITE_HELIUS_API_KEY;
-
 export const HELIUS_CONFIG = {
-  API_KEY: HELIUS_API_KEY,
+  API_KEY: import.meta.env.VITE_HELIUS_API_KEY,
   REST_URL: 'https://api.helius.xyz/v0',
-  RPC_URL: `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY}`,
+  RPC_URL: `https://mainnet.helius-rpc.com/?api-key=${import.meta.env.VITE_HELIUS_API_KEY}`,
 };
 
 export const MINT_CONFIG = {

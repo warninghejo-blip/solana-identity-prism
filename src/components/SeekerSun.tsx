@@ -141,7 +141,31 @@ const sparkCoronaFragmentShader = `
   }
 `;
 
-function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: any) {
+interface GlowLayerProps {
+  size: number;
+  color: string;
+  opacity?: number;
+  scale?: number;
+}
+
+interface SunCoreProps {
+  color1: string;
+  color2: string;
+  size: number;
+  intensity?: number;
+  neonGlow?: boolean;
+  sparkCorona?: boolean;
+  params: ReturnType<typeof getProceduralParams>;
+}
+
+interface BinaryStarSystemProps {
+  palette: StellarProfile['palette'];
+  mode: StellarProfile['mode'];
+  intensity: number;
+  params: ReturnType<typeof getProceduralParams>;
+}
+
+function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: GlowLayerProps) {
   return (
     <mesh scale={scale}>
       <sphereGeometry args={[size, 64, 64]} />
@@ -150,7 +174,7 @@ function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: any) {
   );
 }
 
-function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkCorona = false, params }: any) {
+function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkCorona = false, params }: SunCoreProps) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const coronaMatRef = useRef<THREE.ShaderMaterial>(null);
   const meshRef = useRef<THREE.Mesh>(null);
@@ -189,7 +213,7 @@ function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkC
   );
 }
 
-function BinaryStarSystem({ palette, mode, intensity, params }: any) {
+function BinaryStarSystem({ palette, mode, intensity, params }: BinaryStarSystemProps) {
   const primaryRef = useRef<THREE.Group>(null);
   const secondaryRef = useRef<THREE.Group>(null);
   const primaryLightRef = useRef<THREE.PointLight>(null);
