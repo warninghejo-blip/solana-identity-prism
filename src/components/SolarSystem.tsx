@@ -233,7 +233,7 @@ function Planet({ planet, orbitColor }: { planet: PlanetData; orbitColor: string
           <meshStandardMaterial color={planet.type.color} roughness={planet.type.roughness} metalness={planet.type.metalness} />
         </mesh>
         {planet.hasRing && <PlanetRing planetSize={planet.size} />}
-        {planet.moons.map((m) => <Moon key={m.id} moon={m} planetPosition={positionRef.current} />)}
+        {planet.moons.map((m: any) => <Moon key={m.id} moon={m} planetPosition={positionRef.current} />)}
       </group>
     </>
   );
@@ -338,7 +338,7 @@ function Nebula({ config }: { config?: NebulaConfig }) {
   if (!config) return null;
   return (
     <group>
-      {config.colors.map((c, i) => (
+      {config.colors.map((c: string, i: number) => (
         <mesh key={i} scale={1 + i * 0.3}>
           <sphereGeometry args={[config.radius, 32, 32]} />
           <meshBasicMaterial color={c} transparent opacity={config.intensity / (i + 5)} blending={THREE.AdditiveBlending} depthWrite={false} />
@@ -369,14 +369,14 @@ function SolarSystemScene({ traits, walletAddress, isWarping }: SolarSystemProps
         <>
           <Nebula config={systemData.nebula} />
           <SeekerSun profile={systemData.stellarProfile} walletSeed={walletAddress} />
-          {systemData.planets.map((p) => <Planet key={p.id} planet={p} orbitColor={systemData.orbitColor} />)}
+          {systemData.planets.map((p: any) => <Planet key={p.id} planet={p} orbitColor={systemData.orbitColor} />)}
           <SpaceDust config={systemData.spaceDust} />
           <OrbitControls makeDefault enablePan={false} enableZoom={true} minDistance={8} maxDistance={120} dampingFactor={0.05} enableDamping />
         </>
       )}
 
       <EffectComposer multisampling={0}>
-        <Bloom intensity={(isWarping ? 20.0 : 1.5) + bloomFlash * 40} luminanceThreshold={0.85} luminanceSmoothing={0.9} mipmapBlur />
+        <Bloom intensity={(isWarping ? 3.0 : 0.4) + bloomFlash * 5} luminanceThreshold={0.9} luminanceSmoothing={0.95} mipmapBlur />
         <ChromaticAberration offset={new THREE.Vector2(0.0005, 0.0005)} radialModulation modulationOffset={0.9} />
         <Vignette darkness={0.5} offset={0.3} />
         <Noise opacity={0.015} blendFunction={BlendFunction.SOFT_LIGHT} />
