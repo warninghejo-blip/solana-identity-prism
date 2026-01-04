@@ -1,5 +1,6 @@
 import { VISUAL_CONFIG, PLANET_TYPES } from '@/constants';
 import type { WalletTraits, RarityTier } from '@/hooks/useWalletData';
+import { calculateScore } from '@/hooks/useWalletData';
 
 export interface PlanetData {
   id: string;
@@ -147,6 +148,9 @@ export function generateSolarSystem(traits: WalletTraits, walletAddress?: string
   const rarityConfig = RARITY_VISUALS[traits.rarityTier];
   const addressSeed = walletAddress ? hashWalletAddress(walletAddress) : 0;
   const random = seededRandom(addressSeed + traits.uniqueTokenCount + traits.nftCount);
+  
+  // Calculate current score for binary activation
+  const currentScore = calculateScore(traits);
 
   // 1. Determine Sun Visuals from Traits
   let starMode = rarityConfig.starMode;
@@ -165,6 +169,13 @@ export function generateSolarSystem(traits: WalletTraits, walletAddress?: string
   } else if (traits.hasPreorder) {
     sunType = 'preorder';
     palette = { primary: VISUAL_CONFIG.SUN.PREORDER_COLOR, secondary: '#FFB347' };
+  }
+  
+  // CRITICAL: Binary System activation at score > 650
+  if (currentScore > 650 && starMode === 'single') {
+    starMode = 'binary';
+    plasmaBridge = true;
+    console.log(`%c[Binary Star Activated] Score: ${currentScore} > 650`, "color: #a855f7; font-weight: bold;");
   }
 
   // Mythic tier transforms the system into a Pulsar regardless of specific holder traits,

@@ -117,50 +117,93 @@ function Moon({ moon, planetPosition }: { moon: MoonData; planetPosition: THREE.
 }
 
 function PlanetRing({ planetSize }: { planetSize: number }) {
+  const pointsRef = useRef<THREE.Points>(null);
   const ringRef = useRef<THREE.Mesh>(null);
-  const innerRingRef = useRef<THREE.Mesh>(null);
+  
+  const { positions, colors } = useMemo(() => {
+    const particleCount = 8000;
+    const pos = new Float32Array(particleCount * 3);
+    const col = new Float32Array(particleCount * 3);
+    
+    const innerRadius = planetSize * 1.5;
+    const outerRadius = planetSize * 2.5;
+    
+    for (let i = 0; i < particleCount; i++) {
+      const i3 = i * 3;
+      const angle = Math.random() * Math.PI * 2;
+      const radius = innerRadius + Math.random() * (outerRadius - innerRadius);
+      const variance = (Math.random() - 0.5) * 0.05;
+      
+      pos[i3] = Math.cos(angle) * radius;
+      pos[i3 + 1] = variance;
+      pos[i3 + 2] = Math.sin(angle) * radius;
+      
+      // Golden/icy particle colors
+      const dustType = Math.random();
+      if (dustType > 0.7) {
+        // Ice particles - bluish white
+        col[i3] = 0.9 + Math.random() * 0.1;
+        col[i3 + 1] = 0.95 + Math.random() * 0.05;
+        col[i3 + 2] = 1.0;
+      } else {
+        // Rocky/golden particles
+        col[i3] = 0.85 + Math.random() * 0.15;
+        col[i3 + 1] = 0.7 + Math.random() * 0.2;
+        col[i3 + 2] = 0.3 + Math.random() * 0.2;
+      }
+    }
+    
+    return { positions: pos, colors: col };
+  }, [planetSize]);
   
   useFrame((state) => {
-    if (ringRef.current) ringRef.current.rotation.z += 0.0003;
-    if (innerRingRef.current) innerRingRef.current.rotation.z -= 0.0002;
+    if (pointsRef.current) {
+      pointsRef.current.rotation.y += 0.0002;
+    }
+    if (ringRef.current) {
+      ringRef.current.rotation.z += 0.0001;
+    }
   });
   
   return (
-    <group rotation={[Math.PI / 2.5, 0, 0]}>
+    <group rotation={[Math.PI / 2.3, 0, 0]}>
+      {/* Particle dust */}
+      <points ref={pointsRef}>
+        <bufferGeometry>
+          <bufferAttribute
+            attach="attributes-position"
+            count={positions.length / 3}
+            array={positions}
+            itemSize={3}
+          />
+          <bufferAttribute
+            attach="attributes-color"
+            count={colors.length / 3}
+            array={colors}
+            itemSize={3}
+          />
+        </bufferGeometry>
+        <pointsMaterial
+          size={0.015}
+          vertexColors
+          transparent
+          opacity={0.6}
+          sizeAttenuation
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
+        />
+      </points>
+      
+      {/* Subtle base ring for structure */}
       <mesh ref={ringRef}>
         <ringGeometry args={[planetSize * 1.5, planetSize * 2.5, 128]} />
-        <meshStandardMaterial 
-          color="#daa520" 
-          emissive="#ffd700" 
-          emissiveIntensity={0.4} 
-          side={THREE.DoubleSide} 
-          transparent 
-          opacity={0.7} 
-          roughness={0.2} 
-          metalness={0.8}
-        />
-      </mesh>
-      <mesh ref={innerRingRef} position={[0, 0, 0.01]}>
-        <ringGeometry args={[planetSize * 1.6, planetSize * 2.3, 128]} />
-        <meshStandardMaterial 
-          color="#b8860b" 
-          emissive="#ffed4e" 
-          emissiveIntensity={0.2} 
-          side={THREE.DoubleSide} 
-          transparent 
-          opacity={0.5} 
-          roughness={0.3} 
-          metalness={0.6}
-        />
-      </mesh>
-      <mesh position={[0, 0, -0.02]}>
-        <ringGeometry args={[planetSize * 1.7, planetSize * 2.4, 64]} />
-        <meshBasicMaterial 
-          color="#daa520" 
-          transparent 
-          opacity={0.15} 
-          blending={THREE.AdditiveBlending}
+        <meshBasicMaterial
+          color="#daa520"
+          transparent
+          opacity={0.08}
           side={THREE.DoubleSide}
+          blending={THREE.AdditiveBlending}
+          depthWrite={false}
         />
       </mesh>
     </group>

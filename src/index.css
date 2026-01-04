@@ -173,93 +173,105 @@
   color: white !important;
 }
 
-/* WARP & SCANNING OVERLAYS */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap');
+
+/* CINEMATIC LOADING SCREEN */
 .warp-overlay {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at center, rgba(0, 0, 0, 0.95), #000);
+  background: #05070a;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 200;
-  animation: fadeIn 0.3s ease;
+  animation: fadeIn 0.4s ease;
+  backdrop-filter: blur(0px);
+  transition: opacity 0.6s ease-out, backdrop-filter 0.6s ease-out;
+}
+
+.warp-overlay.fade-out {
+  opacity: 0;
+  backdrop-filter: blur(20px);
 }
 
 .scanning-overlay {
-  background: radial-gradient(circle at 50% 40%, rgba(34, 211, 238, 0.08), #000 70%);
+  background: linear-gradient(180deg, #05070a 0%, #0a0f1a 50%, #05070a 100%);
 }
 
 .warp-content { 
   text-align: center;
   position: relative;
-}
-
-.scanning-ring {
-  width: 120px;
-  height: 120px;
-  border: 3px solid transparent;
-  border-top-color: var(--prism-cyan);
-  border-radius: 50%;
-  margin: 0 auto 2rem;
-  animation: spinRing 1.2s linear infinite;
-  box-shadow: 0 0 40px rgba(34, 211, 238, 0.3);
-}
-
-@keyframes spinRing {
-  0% { transform: rotate(0deg); }
-  100% { transform: rotate(360deg); }
+  max-width: 600px;
+  padding: 2rem;
 }
 
 .warp-text {
-  font-family: ui-monospace, monospace;
-  letter-spacing: 0.8em;
-  font-weight: 900;
-  font-size: 1.75rem;
-  color: var(--prism-cyan);
-  text-shadow: 0 0 20px var(--prism-cyan);
-  animation: textGlow 2s ease-in-out infinite;
-  margin-bottom: 1rem;
+  font-family: 'Orbitron', monospace;
+  letter-spacing: 0.3em;
+  font-weight: 700;
+  font-size: 1.5rem;
+  color: #14f195;
+  text-shadow: 0 0 20px rgba(20, 241, 149, 0.5);
+  animation: subtleGlow 3s ease-in-out infinite;
+  margin-bottom: 3rem;
+  text-transform: uppercase;
 }
 
-@keyframes textGlow {
-  0%, 100% { opacity: 0.8; text-shadow: 0 0 10px var(--prism-cyan); }
-  50% { opacity: 1; text-shadow: 0 0 30px var(--prism-cyan); }
+@keyframes subtleGlow {
+  0%, 100% { 
+    opacity: 0.9; 
+    text-shadow: 0 0 15px rgba(20, 241, 149, 0.4);
+  }
+  50% { 
+    opacity: 1; 
+    text-shadow: 0 0 25px rgba(20, 241, 149, 0.6), 0 0 40px rgba(20, 241, 149, 0.3);
+  }
 }
 
 .warp-subtext {
-  margin-top: 1rem;
-  font-size: 0.8rem;
-  letter-spacing: 0.25em;
-  color: rgba(255, 255, 255, 0.6);
+  margin-top: 1.5rem;
+  font-size: 0.75rem;
+  letter-spacing: 0.2em;
+  color: rgba(255, 255, 255, 0.5);
   text-transform: uppercase;
-  animation: fadeInOut 2s ease-in-out infinite;
-}
-
-@keyframes fadeInOut {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 1; }
+  font-family: 'Orbitron', monospace;
+  font-weight: 400;
 }
 
 .scanning-progress {
-  width: 280px;
-  height: 3px;
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
+  width: 400px;
+  max-width: 90vw;
+  height: 2px;
+  background: rgba(20, 241, 149, 0.1);
+  border-radius: 1px;
   overflow: hidden;
-  margin: 2rem auto 0;
+  margin: 0 auto;
   position: relative;
+  box-shadow: 0 0 10px rgba(20, 241, 149, 0.1);
 }
 
 .scanning-bar {
   height: 100%;
-  background: linear-gradient(90deg, transparent, var(--prism-cyan), transparent);
-  animation: scanProgress 1.5s ease-in-out infinite;
-  box-shadow: 0 0 10px var(--prism-cyan);
+  background: linear-gradient(
+    90deg, 
+    transparent 0%, 
+    rgba(20, 241, 149, 0.3) 25%,
+    #14f195 50%, 
+    rgba(20, 241, 149, 0.3) 75%,
+    transparent 100%
+  );
+  animation: scanProgress 2s ease-in-out infinite;
+  box-shadow: 0 0 20px rgba(20, 241, 149, 0.8), 0 0 40px rgba(20, 241, 149, 0.4);
+  filter: blur(0.5px);
 }
 
 @keyframes scanProgress {
   0% { transform: translateX(-100%); }
-  100% { transform: translateX(300%); }
+  100% { transform: translateX(400%); }
+}
+
+.scanning-ring {
+  display: none;
 }
 
 /* BOTTOM HUD MOBILE */
@@ -302,8 +314,8 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; transform: translateY(5px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 .identity-info-row {

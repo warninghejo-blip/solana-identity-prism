@@ -3,7 +3,6 @@ import ReactDOM from 'react-dom/client';
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { PhantomWalletAdapter } from '@solana/wallet-adapter-wallets';
 import App from './App';
 import Index from './pages/Index';
 import NotFound from './pages/NotFound';
@@ -42,7 +41,8 @@ const router = createBrowserRouter([
   } as any,
 });
 
-const wallets = [new PhantomWalletAdapter()];
+// Use empty wallets array - Phantom auto-registers via Standard Wallet API
+const wallets = [];
 const endpoint = HELIUS_CONFIG.RPC_URL;
 
 ReactDOM.createRoot(document.getElementById('root')!).render(

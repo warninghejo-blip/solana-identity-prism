@@ -270,12 +270,11 @@ function LandingOverlay({ formAddress, setFormAddress, onExplore, connectWallet,
     return (
       <div className="warp-overlay scanning-overlay">
         <div className="warp-content">
-          <div className="scanning-ring"></div>
-          <div className="warp-text">DECODING IDENTITY</div>
-          <div className="warp-subtext">Analyzing on-chain signatures...</div>
           <div className="scanning-progress">
             <div className="scanning-bar"></div>
           </div>
+          <div className="warp-text">Scanning Solana Identity...</div>
+          <div className="warp-subtext">Analyzing blockchain data</div>
         </div>
       </div>
     );

@@ -45,15 +45,40 @@ export interface WalletData {
 
 export function calculateScore(traits: WalletTraits): number {
   let score = 0;
-  if (traits.hasSeeker) score += 200;
-  if (traits.hasPreorder) score += 150;
-  if (traits.hasCombo) score += 200;
+  
+  // SOL Balance
+  score += traits.solBalance * 10;
+  
+  // Wallet Age
+  if (traits.walletAgeDays > 365) score += 300;
+  else if (traits.walletAgeDays > 180) score += 200;
+  else if (traits.walletAgeDays > 90) score += 100;
+  else if (traits.walletAgeDays > 30) score += 50;
+  
+  // Transaction Count
+  if (traits.txCount > 1000) score += 200;
+  else if (traits.txCount > 500) score += 150;
+  else if (traits.txCount > 100) score += 100;
+  else if (traits.txCount > 50) score += 50;
+  
+  // NFT Count
+  if (traits.nftCount > 100) score += 150;
+  else if (traits.nftCount > 50) score += 100;
+  else if (traits.nftCount > 10) score += 50;
+  
+  // CRITICAL: Rebalanced Seeker & Preorder Scoring
+  if (traits.hasSeeker) score += 200;  // Seeker Genesis: 200 points
+  if (traits.hasPreorder) score += 150;  // Chapter 2 Preorder: 150 points
+  if (traits.hasSeeker && traits.hasPreorder) score += 200;  // Combo Bonus: +200 (Total: 550)
+  
+  // Other Traits
   if (traits.isBlueChip) score += 100;
-  if (traits.isMemeLord) score += 70;
-  if (traits.isDeFiKing) score += 70;
-  score += (traits.solBonusApplied || 0);
-  score += (traits.walletAgeBonus || 0);
-  score += Math.min((traits.txCount || 0) * 0.5, 200);
+  if (traits.isDeFiKing) score += 100;
+  if (traits.diamondHands) score += 100;
+  if (traits.hyperactiveDegen) score += 100;
+  if (traits.isMemeLord) score += 50;
+  
+  console.log(`%c[Scoring] Total: ${score} | Seeker: ${traits.hasSeeker} (+200) | Preorder: ${traits.hasPreorder} (+150) | Combo: ${traits.hasSeeker && traits.hasPreorder} (+200)`, "color: #a855f7; font-weight: bold;");
   return Math.round(score);
 }
 
@@ -127,33 +152,44 @@ export function useWalletData(address?: string) {
         const walletAgeDays = Math.floor((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24));
         const avgTxPerDay30d = txCount / 30;
 
-        // 2. DAS API - Enhanced Asset Fetching
+        // 2. DAS API - Fetch Assets via Helius
+        console.log(`%c[DAS Request] Fetching assets for ${address}`, "color: #fbbf24;");
+        
         const response = await fetch(HELIUS_CONFIG.RPC_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             jsonrpc: "2.0",
-            id: "prism-scan",
+            id: "identity-prism-scan",
             method: "getAssetsByOwner",
             params: {
               ownerAddress: address,
               page: 1,
               limit: 1000,
-              displayOptions: { 
-                showCollectionMetadata: true, 
-                showAuthorities: true,
-                showMetadata: true,
-                showFungible: true
-              },
-            },
+              displayOptions: {
+                showCollectionMetadata: true
+              }
+            }
           }),
         });
         
-        const { result } = await response.json();
-        const assets = result?.items || [];
+        if (!response.ok) {
+          console.error(`%c[DAS Error] HTTP ${response.status}`, "color: #ef4444;");
+          throw new Error(`DAS API returned ${response.status}`);
+        }
+
+        const dasResponse = await response.json();
+        
+        if (dasResponse.error) {
+          console.error(`%c[DAS Error]`, "color: #ef4444;", dasResponse.error);
+          throw new Error(dasResponse.error.message || "DAS API error");
+        }
+        
+        const assets = dasResponse.result?.items || [];
         const totalAssetsCount = assets.length;
         
-        console.log(`%c[Scan] DAS: ${totalAssetsCount} total assets found.`, "color: #22d3ee; font-weight: bold;");
+        console.log(`%c[DAS Success] ${totalAssetsCount} total assets found`, "color: #22d3ee; font-weight: bold;");
+        console.log(`%c[DAS Raw Response]`, "color: #a855f7;", dasResponse);
 
         let nftCount = 0;
         let uniqueTokenCount = 0;
@@ -170,22 +206,26 @@ export function useWalletData(address?: string) {
           const symbol = (metadata.symbol || content.metadata?.symbol || "").toLowerCase();
           
           const mint = asset.id;
-          const isPreorderMint = mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER;
-          const collection = asset.grouping?.find((g: any) => g.group_key === "collection")?.group_value;
-          const isSeekerCollection = collection === TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION;
-
-          const auths = (asset.authorities || []).map((a: any) => a.address);
-          const creators = (metadata.creators || asset.creators || content.metadata?.creators || []).map((c: any) => typeof c === 'string' ? c : c.address);
+          
+          // CRITICAL: Seeker Genesis Detection via grouping
+          const grouping = asset.grouping || [];
+          const collectionGroup = grouping.find((g: any) => g.group_key === "collection");
+          const isSeekerGenesis = collectionGroup?.group_value === TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION;
+          
+          // CRITICAL: Chapter 2 Preorder Detection via exact mint
+          const isChapter2Preorder = mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER;
 
           // Seeker Detection
-          if (isSeekerCollection || auths.includes(TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) || creators.includes(TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) || name.includes("seeker")) {
-            console.log(`%c[!!!] SEEKER DETECTED: ${name}`, "color: #22d3ee; font-weight: 900;");
+          if (isSeekerGenesis) {
+            console.log(`%c[🎯 SEEKER GENESIS FOUND!] ${metadata.name || mint}`, "color: #22d3ee; font-weight: 900; font-size: 14px;");
+            console.log(`  Collection: ${collectionGroup?.group_value}`);
             hasSeeker = true;
           }
 
           // Preorder Detection
-          if (isPreorderMint || (name.includes("chapter") && name.includes("2") && name.includes("preorder"))) {
-            console.log(`%c[!!!] PREORDER DETECTED: ${name}`, "color: #fbbf24; font-weight: 900;");
+          if (isChapter2Preorder) {
+            console.log(`%c[🎯 CHAPTER 2 PREORDER FOUND!] ${metadata.name || mint}`, "color: #fbbf24; font-weight: 900; font-size: 14px;");
+            console.log(`  Mint: ${mint}`);
             hasPreorder = true;
           }
 
@@ -200,7 +240,8 @@ export function useWalletData(address?: string) {
 
           if (isExplicitNFT || (isLikelyNFT && !isKnownFungible)) {
             nftCount++;
-            if (BLUE_CHIP_COLLECTION_NAMES.some(bc => name.includes(bc) || (collection && collection.toLowerCase().includes(bc)))) {
+            const collectionValue = collectionGroup?.group_value?.toLowerCase() || "";
+            if (BLUE_CHIP_COLLECTION_NAMES.some(bc => name.includes(bc) || collectionValue.includes(bc))) {
               isBlueChip = true;
             }
           } else {
