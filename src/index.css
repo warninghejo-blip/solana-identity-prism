@@ -385,13 +385,49 @@
 }
 
 .score-num-mini {
-  font-size: 2.5rem;
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(2.4rem, 8vw, 3.8rem);
   font-weight: 900;
   display: block;
-  line-height: 0.9;
-  background: linear-gradient(to bottom, #fff, #94a3b8);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  letter-spacing: 0.3em;
+  line-height: 0.85;
+  color: #ffffff;
+  text-shadow:
+    0 0 18px rgba(20, 241, 149, 0.2),
+    0 0 30px rgba(20, 241, 149, 0.25);
+}
+
+.score-num-mini.common {
+  color: #f8fbff;
+  text-shadow: 0 0 12px rgba(148, 163, 184, 0.4);
+}
+
+.score-num-mini.rare {
+  color: #90f1ff;
+  text-shadow:
+    0 0 15px rgba(34, 211, 238, 0.4),
+    0 0 30px rgba(34, 211, 238, 0.25);
+}
+
+.score-num-mini.epic {
+  color: #d1b3ff;
+  text-shadow:
+    0 0 18px rgba(195, 163, 255, 0.5),
+    0 0 36px rgba(144, 97, 255, 0.35);
+}
+
+.score-num-mini.legendary {
+  color: #ffe49c;
+  text-shadow:
+    0 0 20px rgba(255, 244, 186, 0.5),
+    0 0 35px rgba(255, 196, 92, 0.4);
+}
+
+.score-num-mini.mythic {
+  color: #ff9bdc;
+  text-shadow:
+    0 0 22px rgba(255, 155, 220, 0.6),
+    0 0 40px rgba(126, 239, 255, 0.45);
 }
 
 .score-label-mini {
@@ -533,22 +569,22 @@
 }
 
 .vitals-scroll-x {
-  display: flex;
-  gap: 1rem;
-  overflow-x: auto;
-  padding-bottom: 0.5rem;
-  scrollbar-width: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.85rem;
+  width: 100%;
 }
-
-.vitals-scroll-x::-webkit-scrollbar { display: none; }
 
 .vital-card-mobile {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--prism-border);
   padding: 1rem 1.25rem;
   border-radius: 20px;
-  min-width: 120px;
-  flex-shrink: 0;
+  min-width: 0;
+  width: 100%;
+  flex: 1;
+  box-sizing: border-box;
+  overflow: hidden;
   transition: transform 0.2s ease;
 }
 

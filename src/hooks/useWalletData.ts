@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import {
   HELIUS_CONFIG,
   MEME_COIN_MINTS,
+  MEME_COIN_PRICES_USD,
   TOKEN_ADDRESSES,
   BLUE_CHIP_COLLECTION_NAMES,
   DEFI_POSITION_HINTS,
@@ -33,6 +34,7 @@ export interface WalletTraits {
   walletAgeBonus: number;
   rarityTier: RarityTier;
   totalAssetsCount: number;
+  solTier: "shrimp" | "dolphin" | "whale" | null;
 }
 
 export interface WalletData {
@@ -84,7 +86,13 @@ export function calculateScore(traits: WalletTraits): number {
 
 const SOL_LAMPORTS = 1_000_000_000;
 const DEMO_WALLET_ADDRESS = "0xDemo...Wallet";
-const MEME_SYMBOLS = Object.keys(MEME_COIN_MINTS) as (keyof typeof MEME_COIN_MINTS)[];
+const MEME_MINT_LOOKUP: Record<string, keyof typeof MEME_COIN_MINTS> = Object.entries(MEME_COIN_MINTS).reduce(
+  (acc, [symbol, mint]) => {
+    acc[mint] = symbol as keyof typeof MEME_COIN_MINTS;
+    return acc;
+  },
+  {} as Record<string, keyof typeof MEME_COIN_MINTS>
+);
 const LST_ADDRESSES = Object.values(LST_MINTS);
 
 export function useWalletData(address?: string) {
@@ -150,7 +158,7 @@ export function useWalletData(address?: string) {
           if (oldest.blockTime) firstTxDate = new Date(oldest.blockTime * 1000);
         }
         const walletAgeDays = Math.floor((Date.now() - firstTxDate.getTime()) / (1000 * 60 * 60 * 24));
-        const avgTxPerDay30d = txCount / 30;
+        const avgTxPerDay30d = txCount / Math.max(1, walletAgeDays);
 
         // 2. DAS API - Fetch Assets via Helius
         console.log(`%c[DAS Request] Fetching assets for ${address}`, "color: #fbbf24;");
@@ -196,7 +204,10 @@ export function useWalletData(address?: string) {
         let hasSeeker = false;
         let hasPreorder = false;
         let isBlueChip = false;
-        let isDeFiKing = false;
+        let hasLstExposure = false;
+        let defiProtocolExposure = false;
+        let memeValueUSD = 0;
+        const memeHoldingsSet = new Set<string>();
 
         // 3. Analysis Loop
         assets.forEach((asset: any) => {
@@ -248,11 +259,25 @@ export function useWalletData(address?: string) {
             uniqueTokenCount++;
           }
 
-          if (DEFI_POSITION_HINTS.some(hint => name.includes(hint.toLowerCase()))) {
-            isDeFiKing = true;
+          if (DEFI_POSITION_HINTS.some((hint) => name.includes(hint))) {
+            defiProtocolExposure = true;
           }
           if (LST_ADDRESSES.includes(mint)) {
-            isDeFiKing = true;
+            hasLstExposure = true;
+          }
+
+          const memeSymbol = MEME_MINT_LOOKUP[mint];
+          if (memeSymbol) {
+            const tokenInfo = asset.token_info || {};
+            const decimals = tokenInfo.decimals ?? 0;
+            const balanceRaw = tokenInfo.balance ?? tokenInfo.amount ?? 0;
+            const numericBalance =
+              typeof balanceRaw === "number" ? balanceRaw : parseFloat(balanceRaw || "0");
+            const uiAmount = decimals > 0 ? numericBalance / Math.pow(10, decimals) : numericBalance;
+            if (uiAmount > 0) {
+              memeHoldingsSet.add(memeSymbol);
+              memeValueUSD += uiAmount * (MEME_COIN_PRICES_USD[memeSymbol] || 0);
+            }
           }
         });
 
@@ -262,7 +287,15 @@ export function useWalletData(address?: string) {
           if (info.tokenAmount.uiAmount > 0) {
             const mint = info.mint;
             if (mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER) hasPreorder = true;
-            if (LST_ADDRESSES.includes(mint)) isDeFiKing = true;
+            if (LST_ADDRESSES.includes(mint)) hasLstExposure = true;
+            const memeSymbol = MEME_MINT_LOOKUP[mint];
+            if (memeSymbol) {
+              const amount = info.tokenAmount.uiAmount || 0;
+              if (amount > 0) {
+                memeHoldingsSet.add(memeSymbol);
+                memeValueUSD += amount * (MEME_COIN_PRICES_USD[memeSymbol] || 0);
+              }
+            }
             if (!assets.some((a: any) => a.id === mint)) {
               uniqueTokenCount++;
               // If it has decimals 0 and was missed, it's an NFT
@@ -272,11 +305,12 @@ export function useWalletData(address?: string) {
         });
 
         const hasCombo = hasSeeker && hasPreorder;
-        const memeCoinsHeld = MEME_SYMBOLS.filter((s) =>
-          assets.some((a: any) => a.id === MEME_COIN_MINTS[s]) ||
-          tokenAccountsResponse.value.some((ta: any) => ta.account.data.parsed.info.mint === MEME_COIN_MINTS[s])
-        );
-        const isMemeLord = memeCoinsHeld.length > 3;
+        const memeCoinsHeld = Array.from(memeHoldingsSet);
+        const isMemeLord = memeValueUSD >= 10;
+        const isDeFiKing = hasLstExposure || defiProtocolExposure;
+
+        const solTier =
+          solBalance >= 10 ? "whale" : solBalance >= 1 ? "dolphin" : solBalance >= 0.1 ? "shrimp" : null;
 
         const solBonusApplied = solBalance >= 5 ? 150 : solBalance >= 1 ? 70 : solBalance >= 0.1 ? 30 : 0;
         const walletAgeBonus = Math.min(Math.floor((walletAgeDays / 365) * 100), 300);
@@ -289,6 +323,7 @@ export function useWalletData(address?: string) {
           avgTxPerDay30d, daysSinceLastTx: null,
           solBalance, solBonusApplied, walletAgeDays, walletAgeBonus,
           rarityTier: "common", totalAssetsCount,
+          solTier,
         };
 
         const score = calculateScore(traits);

@@ -141,21 +141,6 @@ const sparkCoronaFragmentShader = `
   }
 `;
 
-const plasmaBridgeFragmentShader = `
-  uniform float uTime;
-  uniform vec3 uColor1;
-  uniform vec3 uColor2;
-  varying vec2 vUv;
-  void main() {
-    float t = uTime * 6.0;
-    float beam = abs(0.15 / (vUv.x - 0.5 + sin(vUv.y * 18.0 + t) * 0.07));
-    beam += abs(0.1 / (vUv.x - 0.5 + cos(vUv.y * 25.0 - t * 0.8) * 0.1));
-    float glow = smoothstep(1.0, 0.0, abs(vUv.x - 0.5) * 1.8);
-    vec3 color = mix(uColor1, uColor2, vUv.y);
-    gl_FragColor = vec4(color * beam, (beam * 0.9 + glow * 0.6));
-  }
-`;
-
 function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: any) {
   return (
     <mesh scale={scale}>
@@ -204,65 +189,74 @@ function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkC
   );
 }
 
-function PlasmaBridge({ colors, orbitRadius }: any) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  useFrame((state) => { if (materialRef.current) materialRef.current.uniforms.uTime.value = state.clock.elapsedTime; });
-  return (
-    <mesh rotation={[0, 0, Math.PI / 2]}>
-      <cylinderGeometry args={[1.0, 1.0, orbitRadius * 2, 32, 1, true]} />
-      <shaderMaterial ref={materialRef} vertexShader={plasmaVertexShader} fragmentShader={plasmaBridgeFragmentShader} uniforms={{ uTime: { value: 0 }, uColor1: { value: new THREE.Color(colors.primary) }, uColor2: { value: new THREE.Color(colors.secondary) } }} transparent blending={THREE.AdditiveBlending} side={THREE.DoubleSide} depthWrite={false} />
-    </mesh>
-  );
-}
+function BinaryStarSystem({ palette, mode, intensity, params }: any) {
+  const primaryRef = useRef<THREE.Group>(null);
+  const secondaryRef = useRef<THREE.Group>(null);
+  const primaryLightRef = useRef<THREE.PointLight>(null);
+  const secondaryLightRef = useRef<THREE.PointLight>(null);
 
-function PulsarBeam({ color, position }: any) {
-  const ref = useRef<THREE.Mesh>(null);
-  useFrame((state) => { if (ref.current) ref.current.rotation.y = state.clock.elapsedTime * 3; });
-  return (
-    <mesh ref={ref} position={position} rotation={[position[1] < 0 ? Math.PI : 0, 0, 0]}>
-      <cylinderGeometry args={[0.4, 20, 300, 32, 1, true]} />
-      <meshBasicMaterial color={color} transparent opacity={0.4} blending={THREE.AdditiveBlending} side={THREE.DoubleSide} depthWrite={false} />
-    </mesh>
-  );
-}
-
-function BinaryStarSystem({ palette, mode, intensity, params, plasmaBridge }: any) {
-  const groupRef = useRef<THREE.Group>(null);
-  const orbitRadius = mode === 'binaryPulsar' ? 4.5 : 3.0;
-  const orbitSpeed = mode === 'binaryPulsar' ? 0.035 : 0.02;
+  const orbitRadius = mode === 'binaryPulsar' ? 6.5 : 4.8;
+  const orbitSpeed = mode === 'binaryPulsar' ? 0.12 : 0.08;
 
   useFrame((state) => {
-    if (groupRef.current) {
-      groupRef.current.rotation.y = state.clock.elapsedTime * orbitSpeed * 50;
+    const angle = state.clock.elapsedTime * orbitSpeed;
+    const verticalWobble = Math.sin(angle * 0.5) * (mode === 'binaryPulsar' ? 0.4 : 0.2);
+
+    if (primaryRef.current) {
+      primaryRef.current.position.set(
+        Math.cos(angle) * orbitRadius,
+        verticalWobble,
+        Math.sin(angle) * orbitRadius
+      );
+      primaryRef.current.rotation.y += 0.001;
+    }
+    if (secondaryRef.current) {
+      secondaryRef.current.position.set(
+        Math.cos(angle + Math.PI) * orbitRadius,
+        -verticalWobble,
+        Math.sin(angle + Math.PI) * orbitRadius
+      );
+      secondaryRef.current.rotation.y += 0.001;
+    }
+    if (primaryLightRef.current) {
+      primaryLightRef.current.position.copy(primaryRef.current?.position || new THREE.Vector3());
+    }
+    if (secondaryLightRef.current) {
+      secondaryLightRef.current.position.copy(secondaryRef.current?.position || new THREE.Vector3());
     }
   });
 
   return (
     <group>
-      <group ref={groupRef}>
-        <group position={[orbitRadius, 0, 0]}>
-          <SunCore color1={palette.primary} color2={palette.secondary} size={VISUAL_CONFIG.SUN.BASE_SIZE * 0.8} intensity={intensity} neonGlow={true} params={params} />
-        </group>
-        <group position={[-orbitRadius, 0, 0]}>
-          <SunCore color1={palette.secondary} color2={palette.primary} size={VISUAL_CONFIG.SUN.BASE_SIZE * 0.7} intensity={intensity * 0.9} sparkCorona={true} params={params} />
-        </group>
-        {plasmaBridge && <PlasmaBridge colors={palette} orbitRadius={orbitRadius} />}
+      <group ref={primaryRef}>
+        <SunCore
+          color1={palette.primary}
+          color2={palette.secondary}
+          size={VISUAL_CONFIG.SUN.BASE_SIZE * 0.8}
+          intensity={intensity}
+          neonGlow={mode !== 'binaryPulsar'}
+          params={params}
+        />
       </group>
-      {mode === 'binaryPulsar' && (
-        <>
-          <PulsarBeam color={palette.primary} position={[0, 150, 0]} />
-          <PulsarBeam color={palette.secondary} position={[0, -150, 0]} />
-        </>
-      )}
-      <pointLight color={palette.primary} intensity={intensity * 35} distance={180} decay={2} />
-      <pointLight color={palette.secondary} intensity={intensity * 30} distance={180} decay={2} />
+      <group ref={secondaryRef}>
+        <SunCore
+          color1={palette.secondary}
+          color2={palette.primary}
+          size={VISUAL_CONFIG.SUN.BASE_SIZE * (mode === 'binaryPulsar' ? 0.85 : 0.7)}
+          intensity={intensity * 0.9}
+          sparkCorona={mode !== 'binaryPulsar'}
+          params={params}
+        />
+      </group>
+      <pointLight ref={primaryLightRef} color={palette.primary} intensity={intensity * 35} distance={400} decay={2} />
+      <pointLight ref={secondaryLightRef} color={palette.secondary} intensity={intensity * 30} distance={400} decay={2} />
     </group>
   );
 }
 
 export function SeekerSun({ profile, walletSeed = 'default' }: SeekerSunProps) {
   const params = useMemo(() => getProceduralParams(walletSeed), [walletSeed]);
-  const { palette, mode, sunType, intensity, plasmaBridge } = profile;
+  const { palette, mode, sunType, intensity } = profile;
 
   if (mode === 'single') {
     return (
@@ -273,5 +267,5 @@ export function SeekerSun({ profile, walletSeed = 'default' }: SeekerSunProps) {
     );
   }
 
-  return <BinaryStarSystem palette={palette} mode={mode} intensity={intensity} params={params} plasmaBridge={plasmaBridge} />;
+  return <BinaryStarSystem palette={palette} mode={mode} intensity={intensity} params={params} />;
 }

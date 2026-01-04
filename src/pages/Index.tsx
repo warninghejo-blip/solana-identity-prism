@@ -118,11 +118,13 @@ const Index = () => {
     if (traits.hasCombo) list.push({ id: "og_combo", label: "OG COMBO" });
     if (traits.hasSeeker) list.push({ id: "seeker", label: "SEEKER GENESIS" });
     if (traits.hasPreorder) list.push({ id: "preorder", label: "PREORDER HODLER" });
-    if (traits.diamondHands) list.push({ id: "diamond_hands", label: "DIAMOND HANDS" });
     if (traits.hyperactiveDegen) list.push({ id: "degen", label: "HYPERACTIVE" });
     if (traits.isMemeLord) list.push({ id: "meme_lord", label: "MEME LORD" });
     if (traits.isDeFiKing) list.push({ id: "defi_king", label: "DEFI KING" });
-    if (traits.isBlueChip) list.push({ id: "whale", label: "WHALE" });
+    if (traits.isBlueChip) list.push({ id: "blue_chip", label: "BLUE CHIP" });
+    if (traits.solTier === "whale") list.push({ id: "sol_whale", label: "SOL WHALE" });
+    else if (traits.solTier === "dolphin") list.push({ id: "sol_dolphin", label: "SOL DOLPHIN" });
+    else if (traits.solTier === "shrimp") list.push({ id: "sol_shrimp", label: "SOL SHRIMP" });
     return list;
   }, [traits]);
 
@@ -198,7 +200,7 @@ const Index = () => {
                   <span className="address-text-mini">{displayAddress}</span>
                 </div>
                 <div className="score-mini">
-                  <span className="score-num-mini">{isLoading ? "…" : score}</span>
+                  <span className={`score-num-mini ${traits?.rarityTier || "common"}`}>{isLoading ? "…" : score}</span>
                   <span className="score-label-mini">IDENTITY SCORE</span>
                 </div>
               </div>

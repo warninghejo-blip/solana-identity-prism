@@ -65,9 +65,10 @@ export const MEME_COIN_MINTS = {
 export const LST_MINTS = {
   JITOSOL: 'J1toso1uCk3RLmjorhTtrVwY9HJ7X8V9yYac6Y7kGCPn',
   MSOL: 'mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So',
+  BSOL: 'BSo13v7qDMGWCM1cW8wwfsfZ7vQLZKxHCiNSN2B7Mq2u',
 } as const;
 
-export const DEFI_POSITION_HINTS = ['KM', 'KAMINO', 'DRIFT', 'HONEY', 'MARGINFI'];
+export const DEFI_POSITION_HINTS = ['kamino', 'drift', 'marginfi', 'mango', 'jito', 'solend', 'zeta'];
 
 export const BLUE_CHIP_COLLECTION_NAMES = ['mad lads', 'solana monkey business', 'claynosaurz'];
 
@@ -161,15 +162,23 @@ export type RarityTier = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 // Planet types for visual variety
 export const PLANET_TYPES = [
-  { name: 'earth', color: '#2E8B57', roughness: 0.6, metalness: 0.15 },
-  { name: 'rocky', color: '#8B7355', roughness: 0.9, metalness: 0.1 },
-  { name: 'icy', color: '#B0E0E6', roughness: 0.3, metalness: 0.2 },
-  { name: 'gaseous', color: '#DEB887', roughness: 0.1, metalness: 0.0 },
-  { name: 'volcanic', color: '#8B0000', roughness: 0.8, metalness: 0.3 },
-  { name: 'oceanic', color: '#1E90FF', roughness: 0.2, metalness: 0.1 },
-  { name: 'desert', color: '#DAA520', roughness: 0.95, metalness: 0.05 },
-  { name: 'toxic', color: '#9ACD32', roughness: 0.6, metalness: 0.15 },
-  { name: 'crystal', color: '#E0FFFF', roughness: 0.1, metalness: 0.8 },
-  { name: 'lava', color: '#FF4500', roughness: 0.7, metalness: 0.2 },
-  { name: 'frozen', color: '#F0FFFF', roughness: 0.4, metalness: 0.3 },
+  { name: 'earth', baseColor: '#2E8B57', accent: '#8ddbe0', roughness: 0.5, metalness: 0.15, surface: 'oceanic' },
+  { name: 'oceanic', baseColor: '#118cd6', accent: '#f5f8ff', roughness: 0.25, metalness: 0.08, surface: 'oceanic' },
+  { name: 'rocky', baseColor: '#8B7355', accent: '#d1bfa5', roughness: 0.9, metalness: 0.12, surface: 'cratered' },
+  { name: 'cratered', baseColor: '#777777', accent: '#cfcfcf', roughness: 0.85, metalness: 0.2, surface: 'cratered' },
+  { name: 'gaseous', baseColor: '#D9A066', accent: '#f0d8b0', roughness: 0.12, metalness: 0.02, surface: 'gas' },
+  { name: 'gas_striped', baseColor: '#b980ff', accent: '#f8b4ff', roughness: 0.1, metalness: 0.05, surface: 'gas' },
+  { name: 'icy', baseColor: '#B0E0E6', accent: '#f7fdff', roughness: 0.3, metalness: 0.22, surface: 'cratered' },
+  { name: 'volcanic', baseColor: '#8B0000', accent: '#ff7b00', roughness: 0.75, metalness: 0.25, surface: 'basic' },
+  { name: 'desert', baseColor: '#DAA520', accent: '#f9e4a4', roughness: 0.95, metalness: 0.05, surface: 'basic' },
+  { name: 'toxic', baseColor: '#9ACD32', accent: '#f0ffb3', roughness: 0.6, metalness: 0.15, surface: 'basic' },
+  { name: 'crystal', baseColor: '#E0FFFF', accent: '#baf5ff', roughness: 0.1, metalness: 0.8, surface: 'basic' },
+  { name: 'lava', baseColor: '#FF4500', accent: '#ffd74d', roughness: 0.65, metalness: 0.25, surface: 'basic' },
 ] as const;
+
+export const MEME_COIN_PRICES_USD: Record<keyof typeof MEME_COIN_MINTS, number> = {
+  BONK: 0.000002,
+  WIF: 3.5,
+  POPCAT: 0.35,
+  MEW: 0.003,
+};

@@ -2,6 +2,8 @@ import { VISUAL_CONFIG, PLANET_TYPES } from '@/constants';
 import type { WalletTraits, RarityTier } from '@/hooks/useWalletData';
 import { calculateScore } from '@/hooks/useWalletData';
 
+type PlanetSurface = 'basic' | 'oceanic' | 'cratered' | 'gas';
+
 export interface PlanetData {
   id: string;
   size: number;
@@ -13,6 +15,8 @@ export interface PlanetData {
   moons: MoonData[];
   hasRing: boolean;
   geometry: 'sphere' | 'oblate' | 'crystalline';
+  materialSeed: number;
+  surface: PlanetSurface;
 }
 
 export interface MoonData {
@@ -255,6 +259,8 @@ export function generateSolarSystem(traits: WalletTraits, walletAddress?: string
       moons,
       hasRing: false,
       geometry: random() > 0.8 ? 'oblate' : 'sphere',
+      materialSeed: Math.floor(random() * 10000),
+      surface: type.surface as PlanetSurface,
     });
   }
 
