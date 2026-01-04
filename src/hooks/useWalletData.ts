@@ -149,8 +149,8 @@ export function useWalletData(address?: string) {
           }),
         });
         
-        const data = await response.json();
-        const assets = data.result?.items || [];
+        const { result } = await response.json();
+        const assets = result?.items || [];
         const totalAssetsCount = assets.length;
         
         console.log(`%c[Scan] DAS: ${totalAssetsCount} total assets found.`, "color: #22d3ee; font-weight: bold;");

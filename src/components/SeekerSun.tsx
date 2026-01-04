@@ -168,6 +168,7 @@ function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: any) {
 function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkCorona = false, params }: any) {
   const materialRef = useRef<THREE.ShaderMaterial>(null);
   const coronaMatRef = useRef<THREE.ShaderMaterial>(null);
+  const meshRef = useRef<THREE.Mesh>(null);
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
     uColor1: { value: new THREE.Color(color1) },
@@ -182,11 +183,12 @@ function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkC
   useFrame((state) => {
     if (materialRef.current) materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
     if (coronaMatRef.current) coronaMatRef.current.uniforms.uTime.value = state.clock.elapsedTime;
+    if (meshRef.current) meshRef.current.rotation.y += 0.0002;
   });
 
   return (
     <group>
-      <mesh>
+      <mesh ref={meshRef}>
         <sphereGeometry args={[size, 64, 64]} />
         <shaderMaterial ref={materialRef} vertexShader={plasmaVertexShader} fragmentShader={plasmaFragmentShader} uniforms={uniforms} toneMapped={false} />
       </mesh>

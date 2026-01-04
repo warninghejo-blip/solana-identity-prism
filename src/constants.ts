@@ -161,6 +161,7 @@ export type RarityTier = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 // Planet types for visual variety
 export const PLANET_TYPES = [
+  { name: 'earth', color: '#2E8B57', roughness: 0.6, metalness: 0.15 },
   { name: 'rocky', color: '#8B7355', roughness: 0.9, metalness: 0.1 },
   { name: 'icy', color: '#B0E0E6', roughness: 0.3, metalness: 0.2 },
   { name: 'gaseous', color: '#DEB887', roughness: 0.1, metalness: 0.0 },

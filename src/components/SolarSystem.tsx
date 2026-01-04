@@ -117,11 +117,53 @@ function Moon({ moon, planetPosition }: { moon: MoonData; planetPosition: THREE.
 }
 
 function PlanetRing({ planetSize }: { planetSize: number }) {
+  const ringRef = useRef<THREE.Mesh>(null);
+  const innerRingRef = useRef<THREE.Mesh>(null);
+  
+  useFrame((state) => {
+    if (ringRef.current) ringRef.current.rotation.z += 0.0003;
+    if (innerRingRef.current) innerRingRef.current.rotation.z -= 0.0002;
+  });
+  
   return (
-    <mesh rotation={[Math.PI / 2.5, 0, 0]}>
-      <ringGeometry args={[planetSize * 1.5, planetSize * 2.5, 64]} />
-      <meshStandardMaterial color="#daa520" emissive="#ffd700" emissiveIntensity={0.3} side={THREE.DoubleSide} transparent opacity={0.6} roughness={0.3} metalness={0.7} />
-    </mesh>
+    <group rotation={[Math.PI / 2.5, 0, 0]}>
+      <mesh ref={ringRef}>
+        <ringGeometry args={[planetSize * 1.5, planetSize * 2.5, 128]} />
+        <meshStandardMaterial 
+          color="#daa520" 
+          emissive="#ffd700" 
+          emissiveIntensity={0.4} 
+          side={THREE.DoubleSide} 
+          transparent 
+          opacity={0.7} 
+          roughness={0.2} 
+          metalness={0.8}
+        />
+      </mesh>
+      <mesh ref={innerRingRef} position={[0, 0, 0.01]}>
+        <ringGeometry args={[planetSize * 1.6, planetSize * 2.3, 128]} />
+        <meshStandardMaterial 
+          color="#b8860b" 
+          emissive="#ffed4e" 
+          emissiveIntensity={0.2} 
+          side={THREE.DoubleSide} 
+          transparent 
+          opacity={0.5} 
+          roughness={0.3} 
+          metalness={0.6}
+        />
+      </mesh>
+      <mesh position={[0, 0, -0.02]}>
+        <ringGeometry args={[planetSize * 1.7, planetSize * 2.4, 64]} />
+        <meshBasicMaterial 
+          color="#daa520" 
+          transparent 
+          opacity={0.15} 
+          blending={THREE.AdditiveBlending}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+    </group>
   );
 }
 

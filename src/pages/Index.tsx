@@ -54,11 +54,16 @@ const Index = () => {
       return;
     }
 
-    if (isWarping || isLoading || !traits) {
+    if (isWarping) {
+      setViewState("scanning");
+      return;
+    }
+
+    if (isLoading || !traits) {
       setViewState("scanning");
     } else {
-      // Small delay before ready to ensure system data settled
-      const timer = setTimeout(() => setViewState("ready"), 200);
+      // Delay to ensure smooth transition
+      const timer = setTimeout(() => setViewState("ready"), 500);
       return () => clearTimeout(timer);
     }
   }, [resolvedAddress, isWarping, isLoading, traits]);
@@ -263,11 +268,14 @@ const Index = () => {
 function LandingOverlay({ formAddress, setFormAddress, onExplore, connectWallet, isConnecting, hasProvider, combinedError, isScanning }: any) {
   if (isScanning) {
     return (
-      <div className="warp-overlay">
+      <div className="warp-overlay scanning-overlay">
         <div className="warp-content">
+          <div className="scanning-ring"></div>
           <div className="warp-text">DECODING IDENTITY</div>
-          <div className="warp-subtext">Scanning Solana neural network...</div>
-          <Loader2 className="h-8 w-8 animate-spin mt-6 mx-auto text-cyan-400 opacity-50" />
+          <div className="warp-subtext">Analyzing on-chain signatures...</div>
+          <div className="scanning-progress">
+            <div className="scanning-bar"></div>
+          </div>
         </div>
       </div>
     );
