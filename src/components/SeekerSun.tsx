@@ -1,6 +1,17 @@
 import { useRef, useMemo } from 'react';
 import { useFrame } from '@react-three/fiber';
-import * as THREE from 'three';
+import { 
+  Color, 
+  ShaderMaterial, 
+  Mesh, 
+  MeshStandardMaterial, 
+  AdditiveBlending, 
+  BackSide, 
+  DoubleSide, 
+  Group, 
+  PointLight, 
+  Vector3 
+} from 'three';
 import { VISUAL_CONFIG } from '@/constants';
 import type { StellarProfile } from '@/lib/solarSystemGenerator';
 
@@ -103,22 +114,60 @@ const plasmaFragmentShader = `
     return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
   }
   
+  float fbm(vec3 p, int octaves) {
+    float value = 0.0;
+    float amplitude = 0.5;
+    float frequency = 1.0;
+    for(int i = 0; i < 8; i++) {
+      if(i >= octaves) break;
+      value += amplitude * snoise(p * frequency);
+      frequency *= 2.0;
+      amplitude *= 0.5;
+    }
+    return value;
+  }
+  
   void main() {
     vec3 pos = vPosition * uNoiseScale;
     float t = uTime * uPulseSpeed;
-    float noise = snoise(pos + t * 0.1) * uTurbulence;
-    noise += snoise(pos * 2.0 - t * 0.15) * 0.5 * uTurbulence;
-    float sunspots = snoise(pos * 3.0 + vec3(t * 0.05)) * uSunspotDensity;
-    sunspots = smoothstep(0.3, 0.8, sunspots);
-    float plasma = noise * 0.5 + 0.5;
-    vec3 color = mix(uColor1, uColor2, plasma);
-    color = mix(color, color * 0.3, sunspots * 0.4);
-    float core = pow(1.0 - length(vUv - 0.5) * 1.8, 4.0);
-    color = mix(color, vec3(1.0), max(core, 0.0) * 0.8);
+    
+    // Multi-octave turbulent plasma motion
+    float turbulence = fbm(pos + vec3(t * 0.15, t * 0.12, t * 0.08), 5);
+    float boil = fbm(pos * 2.5 + vec3(sin(t * 0.5), cos(t * 0.6), t * 0.3), 4) * 0.6;
+    float microTurbulence = snoise(pos * 6.0 + vec3(t * 0.8)) * 0.3;
+    
+    // Combined plasma base
+    float plasma = (turbulence + boil + microTurbulence) * 0.5 + 0.5;
+    
+    // Dark sunspots with sharp edges
+    float sunspotNoise = fbm(pos * 2.8 + vec3(t * 0.03), 4);
+    float sunspots = smoothstep(0.45, 0.55, sunspotNoise) * uSunspotDensity;
+    float darkSpots = 1.0 - smoothstep(0.2, 0.35, sunspotNoise) * 0.7;
+    
+    // Bright flares (solar prominences)
+    float flareNoise = fbm(pos * 1.5 - vec3(t * 0.18), 3);
+    float flares = smoothstep(0.65, 0.85, flareNoise) * 1.5;
+    
+    // Color mixing
+    vec3 baseColor = mix(uColor1, uColor2, plasma);
+    baseColor = mix(baseColor, baseColor * 0.25, (1.0 - darkSpots) * 0.8);
+    baseColor += vec3(flares) * uColor1 * 0.8;
+    
+    // Intense white-hot core
+    float distFromCenter = length(vUv - 0.5);
+    float core = pow(1.0 - distFromCenter * 2.0, 5.0);
+    baseColor = mix(baseColor, vec3(1.2, 1.15, 1.1), clamp(core, 0.0, 1.0));
+    
+    // Limb darkening and brightening
     vec3 viewDir = normalize(vViewPosition);
-    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.0);
-    color += uColor1 * fresnel * 0.6;
-    gl_FragColor = vec4(color * uIntensity, 1.0);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 3.5);
+    baseColor += uColor1 * fresnel * 0.6;
+    
+    // Edge glow for prominence effect
+    float edgeGlow = smoothstep(0.3, 0.8, distFromCenter) * fresnel * 1.2;
+    baseColor += vec3(edgeGlow) * uColor1;
+    
+    gl_FragColor = vec4(baseColor * uIntensity, 1.0);
   }
 `;
 
@@ -126,18 +175,19 @@ const sparkCoronaFragmentShader = `
   uniform float uTime;
   uniform vec3 uColor;
   varying vec2 vUv;
-  float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+  
   void main() {
     vec2 uv = vUv * 2.0 - 1.0;
     float dist = length(uv);
-    float angle = atan(uv.y, uv.x);
-    float sparks = 0.0;
-    for(int i = 0; i < 16; i++) {
-        float speed = 0.3 + hash(vec2(float(i))) * 0.7;
-        float spark_angle = uTime * speed + hash(vec2(float(i), 1.0)) * 6.28;
-        sparks += smoothstep(0.01, 0.0, abs(sin(angle - spark_angle))) * smoothstep(1.0, 0.6, dist) * smoothstep(0.3, 0.9, dist);
-    }
-    gl_FragColor = vec4(uColor * sparks * 5.0, sparks);
+    
+    // Soft radial glow
+    float glow = smoothstep(1.0, 0.2, dist) * smoothstep(0.0, 0.5, dist);
+    
+    // Pulsing noise-like effect
+    float pulse = 0.8 + 0.2 * sin(uTime * 2.0 + dist * 5.0);
+    float finalGlow = glow * pulse;
+    
+    gl_FragColor = vec4(uColor * finalGlow * 2.0, finalGlow * 0.4);
   }
 `;
 
@@ -165,24 +215,64 @@ interface BinaryStarSystemProps {
   params: ReturnType<typeof getProceduralParams>;
 }
 
-function GlowLayer({ size, color, opacity = 0.3, scale = 1.2 }: GlowLayerProps) {
+const glowVertexShader = `
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+    vViewPosition = -mvPosition.xyz;
+    gl_Position = projectionMatrix * mvPosition;
+  }
+`;
+
+const glowFragmentShader = `
+  uniform vec3 uColor;
+  uniform float uOpacity;
+  varying vec3 vNormal;
+  varying vec3 vViewPosition;
+  void main() {
+    vec3 viewDir = normalize(vViewPosition);
+    float fresnel = pow(1.0 - abs(dot(vNormal, viewDir)), 2.0);
+    gl_FragColor = vec4(uColor, fresnel * uOpacity);
+  }
+`;
+
+function GlowLayer({ size, color, opacity = 0.15, scale = 1.2 }: GlowLayerProps) {
+  const uniforms = useMemo(() => ({
+    uColor: { value: new Color(color) },
+    uOpacity: { value: opacity },
+  }), [color, opacity]);
+
   return (
     <mesh scale={scale}>
       <sphereGeometry args={[size, 64, 64]} />
-      <meshBasicMaterial color={color} transparent opacity={opacity} blending={THREE.AdditiveBlending} depthWrite={false} />
+      <shaderMaterial 
+        vertexShader={glowVertexShader} 
+        fragmentShader={glowFragmentShader} 
+        uniforms={uniforms} 
+        transparent 
+        blending={AdditiveBlending} 
+        side={BackSide}
+        depthWrite={false} 
+        toneMapped={false}
+      />
     </mesh>
   );
 }
 
 function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkCorona = false, params }: SunCoreProps) {
-  const materialRef = useRef<THREE.ShaderMaterial>(null);
-  const coronaMatRef = useRef<THREE.ShaderMaterial>(null);
-  const meshRef = useRef<THREE.Mesh>(null);
+  const materialRef = useRef<ShaderMaterial>(null);
+  const coronaMatRef = useRef<ShaderMaterial>(null);
+  const meshRef = useRef<Mesh>(null);
+  const coreMeshRef = useRef<Mesh>(null);
+  const coreMaterialRef = useRef<MeshStandardMaterial>(null);
+  
   const uniforms = useMemo(() => ({
     uTime: { value: 0 },
-    uColor1: { value: new THREE.Color(color1) },
-    uColor2: { value: new THREE.Color(color2) },
-    uIntensity: { value: intensity * (neonGlow ? 2.0 : 1.0) },
+    uColor1: { value: new Color(color1) },
+    uColor2: { value: new Color(color2) },
+    uIntensity: { value: intensity * (neonGlow ? 2.5 : 1.0) },
     uNoiseScale: { value: params.noiseScale || 2 },
     uTurbulence: { value: params.turbulence || 1 },
     uPulseSpeed: { value: params.pulseSpeed || 0.5 },
@@ -190,63 +280,113 @@ function SunCore({ color1, color2, size, intensity = 3, neonGlow = false, sparkC
   }), [color1, color2, intensity, neonGlow, params]);
 
   useFrame((state) => {
-    if (materialRef.current) materialRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    if (coronaMatRef.current) coronaMatRef.current.uniforms.uTime.value = state.clock.elapsedTime;
-    if (meshRef.current) meshRef.current.rotation.y += 0.0002;
+    const time = state.clock.elapsedTime;
+    if (materialRef.current) materialRef.current.uniforms.uTime.value = time;
+    if (coronaMatRef.current) coronaMatRef.current.uniforms.uTime.value = time;
+    
+    // Blinding pulsing between 25 and 35 for cinematic HDR bloom
+    if (coreMaterialRef.current) {
+      const pulse = 30 + Math.sin(time * 1.8) * 4 + Math.sin(time * 3.2) * 1;
+      coreMaterialRef.current.emissiveIntensity = pulse;
+    }
+
+    if (meshRef.current) {
+      meshRef.current.rotation.y += 0.0015;
+    }
+    if (coreMeshRef.current) {
+      coreMeshRef.current.rotation.y += 0.0008;
+    }
   });
 
   return (
     <group>
+      {/* Layer 1: Core - Blinding White-Cyan, Pulsing 10-20 Intensity */}
+      <mesh ref={coreMeshRef}>
+        <sphereGeometry args={[size * 0.9, 64, 64]} />
+        <meshStandardMaterial 
+          ref={coreMaterialRef}
+          color="#ffffff" 
+          emissive="#e0ffff" 
+          emissiveIntensity={30} 
+          toneMapped={false}
+        />
+      </mesh>
+
+      {/* Core Plasma Surface Overlay */}
       <mesh ref={meshRef}>
         <sphereGeometry args={[size, 64, 64]} />
-        <shaderMaterial ref={materialRef} vertexShader={plasmaVertexShader} fragmentShader={plasmaFragmentShader} uniforms={uniforms} toneMapped={false} />
+        <shaderMaterial 
+          ref={materialRef} 
+          vertexShader={plasmaVertexShader} 
+          fragmentShader={plasmaFragmentShader} 
+          uniforms={uniforms} 
+          toneMapped={false} 
+          transparent={false} 
+        />
       </mesh>
+
+      {/* Cinematic 3-Layer Glow (Additive) */}
+      
+      {/* Layer 2: Inner Glow - Almost pure white for high temp */}
+      <GlowLayer size={size} color="#ffffff" opacity={0.5} scale={1.2} />
+      
+      {/* Layer 3: Outer Corona - Primary color flare */}
+      <GlowLayer size={size} color={color1} opacity={0.15} scale={2.2} />
+
+      {/* Layer 4: Volume Rays - Wide atmospheric scattering */}
+      <GlowLayer size={size} color={color1} opacity={0.05} scale={4.0} />
+
       {sparkCorona && (
-        <mesh scale={2.0}>
-          <planeGeometry args={[size * 5, size * 5]} />
-          <shaderMaterial ref={coronaMatRef} vertexShader={plasmaVertexShader} fragmentShader={sparkCoronaFragmentShader} uniforms={{ uTime: { value: 0 }, uColor: { value: new THREE.Color(color1) } }} transparent blending={THREE.AdditiveBlending} depthWrite={false} />
+        <mesh>
+          <sphereGeometry args={[size * 1.8, 32, 32]} />
+          <shaderMaterial 
+            ref={coronaMatRef} 
+            vertexShader={plasmaVertexShader} 
+            fragmentShader={sparkCoronaFragmentShader} 
+            uniforms={{ 
+              uTime: { value: 0 }, 
+              uColor: { value: new Color(color1) } 
+            }} 
+            transparent 
+            blending={AdditiveBlending} 
+            side={DoubleSide}
+            depthWrite={false}
+            toneMapped={false}
+          />
         </mesh>
       )}
-      {neonGlow && <GlowLayer size={size} color={color1} opacity={0.5} scale={1.4} />}
-      <GlowLayer size={size} color={color1} opacity={0.2} scale={1.1} />
     </group>
   );
 }
 
 function BinaryStarSystem({ palette, mode, intensity, params }: BinaryStarSystemProps) {
-  const primaryRef = useRef<THREE.Group>(null);
-  const secondaryRef = useRef<THREE.Group>(null);
-  const primaryLightRef = useRef<THREE.PointLight>(null);
-  const secondaryLightRef = useRef<THREE.PointLight>(null);
+  const primaryRef = useRef<Group>(null);
+  const secondaryRef = useRef<Group>(null);
+  const primaryLightRef = useRef<PointLight>(null);
+  const secondaryLightRef = useRef<PointLight>(null);
 
   const orbitRadius = mode === 'binaryPulsar' ? 6.5 : 4.8;
-  const orbitSpeed = mode === 'binaryPulsar' ? 0.12 : 0.08;
+  const orbitSpeed = VISUAL_CONFIG.ANIMATION.BINARY_ORBIT * (mode === 'binaryPulsar' ? 1.5 : 1.0);
 
   useFrame((state) => {
-    const angle = state.clock.elapsedTime * orbitSpeed;
-    const verticalWobble = Math.sin(angle * 0.5) * (mode === 'binaryPulsar' ? 0.4 : 0.2);
-
+    const time = state.clock.elapsedTime;
+    const angle = time * orbitSpeed;
+    
     if (primaryRef.current) {
-      primaryRef.current.position.set(
-        Math.cos(angle) * orbitRadius,
-        verticalWobble,
-        Math.sin(angle) * orbitRadius
-      );
-      primaryRef.current.rotation.y += 0.001;
+      primaryRef.current.position.x = Math.cos(angle) * orbitRadius;
+      primaryRef.current.position.z = Math.sin(angle) * orbitRadius;
+      primaryRef.current.rotation.y += 0.002;
     }
     if (secondaryRef.current) {
-      secondaryRef.current.position.set(
-        Math.cos(angle + Math.PI) * orbitRadius,
-        -verticalWobble,
-        Math.sin(angle + Math.PI) * orbitRadius
-      );
+      secondaryRef.current.position.x = Math.cos(angle + Math.PI) * orbitRadius;
+      secondaryRef.current.position.z = Math.sin(angle + Math.PI) * orbitRadius;
       secondaryRef.current.rotation.y += 0.001;
     }
     if (primaryLightRef.current) {
-      primaryLightRef.current.position.copy(primaryRef.current?.position || new THREE.Vector3());
+      primaryLightRef.current.position.copy(primaryRef.current?.position || new Vector3());
     }
     if (secondaryLightRef.current) {
-      secondaryLightRef.current.position.copy(secondaryRef.current?.position || new THREE.Vector3());
+      secondaryLightRef.current.position.copy(secondaryRef.current?.position || new Vector3());
     }
   });
 

@@ -100,6 +100,7 @@
   margin-bottom: 3rem;
   background: linear-gradient(to bottom, #fff, rgba(255, 255, 255, 0.6));
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
   letter-spacing: -0.02em;
 }
@@ -389,9 +390,11 @@
   font-size: clamp(2.4rem, 8vw, 3.8rem);
   font-weight: 900;
   display: block;
-  letter-spacing: 0.3em;
+  letter-spacing: -0.05em; /* High-tech tight tracking */
   line-height: 0.85;
   color: #ffffff;
+  text-align: center;
+  margin: 0.5rem 0;
   text-shadow:
     0 0 18px rgba(20, 241, 149, 0.2),
     0 0 30px rgba(20, 241, 149, 0.25);
@@ -435,7 +438,7 @@
   font-weight: 800;
   color: var(--prism-cyan);
   letter-spacing: 0.25em;
-  text-align: right;
+  text-align: center;
   display: block;
 }
 
@@ -510,6 +513,51 @@
   box-shadow: 0 8px 16px rgba(0, 0, 0, 0.2);
 }
 
+/* OG STATUS HUD */
+.og-status-hud {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  padding: 0 0.25rem;
+}
+
+.og-badge {
+  flex: 1;
+  padding: 0.4rem;
+  border-radius: 8px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-align: center;
+  text-transform: uppercase;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.og-badge.active.seeker {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.3);
+  color: #22d3ee;
+  box-shadow: 0 0 15px rgba(34, 211, 238, 0.15);
+}
+
+.og-badge.active.preorder {
+  background: rgba(251, 191, 36, 0.1);
+  border-color: rgba(251, 191, 36, 0.3);
+  color: #fbbf24;
+  box-shadow: 0 0 15px rgba(251, 191, 36, 0.15);
+}
+
+.og-badge.combo.active {
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.2), rgba(255, 165, 0, 0.2));
+  border-color: rgba(255, 215, 0, 0.4);
+  color: #fff;
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
+  animation: gold-pulse 2s infinite ease-in-out;
+}
+
 /* ACHIEVEMENTS HUD */
 .achievements-hud {
   display: flex;
@@ -551,7 +599,21 @@
   transform: scale(1.05);
 }
 
-.ach-tag.og_combo { background: linear-gradient(90deg, rgba(34, 211, 238, 0.15), rgba(251, 191, 36, 0.15)); color: #fff; border-color: rgba(255, 255, 255, 0.2); box-shadow: 0 0 15px rgba(34, 211, 238, 0.1); }
+.ach-tag.og_combo { 
+  background: linear-gradient(135deg, rgba(255, 215, 0, 0.3), rgba(255, 165, 0, 0.3)); 
+  color: #fff; 
+  border-color: rgba(255, 215, 0, 0.5); 
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.4); 
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
+  font-weight: 900;
+  animation: gold-pulse 2s infinite ease-in-out;
+}
+
+@keyframes gold-pulse {
+  0% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.3); }
+  50% { box-shadow: 0 0 30px rgba(255, 215, 0, 0.6); }
+  100% { box-shadow: 0 0 15px rgba(255, 215, 0, 0.3); }
+}
 .ach-tag.diamond_hands { color: #22d3ee; border-color: rgba(34, 211, 238, 0.25); background: rgba(34, 211, 238, 0.05); }
 .ach-tag.degen { color: #f87171; border-color: rgba(248, 113, 113, 0.25); background: rgba(248, 113, 113, 0.05); }
 .ach-tag.meme_lord { color: #f472b6; border-color: rgba(244, 114, 182, 0.25); background: rgba(244, 114, 182, 0.05); }
@@ -570,7 +632,7 @@
 
 .vitals-scroll-x {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   gap: 0.85rem;
   width: 100%;
 }
@@ -578,13 +640,20 @@
 .vital-card-mobile {
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--prism-border);
-  padding: 1rem 1.25rem;
+  padding: 1.25rem 1rem;
+  padding-left: 1rem; /* px-4 equivalent */
+  padding-right: 1rem;
   border-radius: 20px;
-  min-width: 0;
+  min-width: 130px; /* Enforce minimum width to prevent clipping */
   width: 100%;
   flex: 1;
   box-sizing: border-box;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   transition: transform 0.2s ease;
 }
 

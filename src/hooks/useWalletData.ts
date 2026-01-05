@@ -5,8 +5,10 @@ import {
   MEME_COIN_PRICES_USD,
   TOKEN_ADDRESSES,
   BLUE_CHIP_COLLECTION_NAMES,
+  BLUE_CHIP_COLLECTIONS,
   DEFI_POSITION_HINTS,
   LST_MINTS,
+  SCORING,
 } from "@/constants";
 import { useConnection } from "@solana/wallet-adapter-react";
 import { PublicKey, ConfirmedSignatureInfo } from "@solana/web3.js";
@@ -48,40 +50,46 @@ export interface WalletData {
 export function calculateScore(traits: WalletTraits): number {
   let score = 0;
   
-  // SOL Balance
-  score += traits.solBalance * 10;
+  // 1. SOL Balance (Max 75)
+  const sol = traits.solBalance;
+  if (sol >= 5) score += SCORING.SOL_BALANCE_THRESHOLDS.LEGEND.bonus;
+  else if (sol >= 1) score += SCORING.SOL_BALANCE_THRESHOLDS.MAJOR.bonus;
+  else if (sol >= 0.1) score += SCORING.SOL_BALANCE_THRESHOLDS.MINOR.bonus;
   
-  // Wallet Age
-  if (traits.walletAgeDays > 365) score += 300;
-  else if (traits.walletAgeDays > 180) score += 200;
-  else if (traits.walletAgeDays > 90) score += 100;
-  else if (traits.walletAgeDays > 30) score += 50;
+  // 2. Wallet Age (Max 150)
+  const age = traits.walletAgeDays;
+  if (age > 365) score += SCORING.WALLET_AGE_MAX;
+  else if (age > 180) score += SCORING.WALLET_AGE_PER_YEAR * 2;
+  else if (age > 90) score += SCORING.WALLET_AGE_PER_YEAR;
+  else if (age > 30) score += SCORING.WALLET_AGE_PER_YEAR / 2;
   
-  // Transaction Count
-  if (traits.txCount > 1000) score += 200;
-  else if (traits.txCount > 500) score += 150;
-  else if (traits.txCount > 100) score += 100;
-  else if (traits.txCount > 50) score += 50;
+  // 3. Transaction Count (Max 100)
+  const tx = traits.txCount;
+  const txBonus = Math.min(tx * SCORING.TX_COUNT_MULTIPLIER, SCORING.TX_COUNT_CAP);
+  score += txBonus;
   
-  // NFT Count
-  if (traits.nftCount > 100) score += 150;
-  else if (traits.nftCount > 50) score += 100;
-  else if (traits.nftCount > 10) score += 50;
+  // 4. NFT Count (Max 100)
+  const nfts = traits.nftCount;
+  if (nfts > 100) score += 100;
+  else if (nfts > 50) score += 75;
+  else if (nfts > 10) score += 40;
   
-  // CRITICAL: Rebalanced Seeker & Preorder Scoring
-  if (traits.hasSeeker) score += 200;  // Seeker Genesis: 200 points
-  if (traits.hasPreorder) score += 150;  // Chapter 2 Preorder: 150 points
-  if (traits.hasSeeker && traits.hasPreorder) score += 200;  // Combo Bonus: +200 (Total: 550)
+  // 5. OG Status (Max 550)
+  if (traits.hasSeeker) score += SCORING.SEEKER_GENESIS_BONUS;
+  if (traits.hasPreorder) score += SCORING.CHAPTER2_PREORDER_BONUS;
+  if (traits.hasCombo) score += SCORING.COMBO_BONUS;
   
-  // Other Traits
-  if (traits.isBlueChip) score += 100;
-  if (traits.isDeFiKing) score += 100;
-  if (traits.diamondHands) score += 100;
-  if (traits.hyperactiveDegen) score += 100;
-  if (traits.isMemeLord) score += 50;
+  // 6. Behavioral Traits (Max 210)
+  if (traits.isBlueChip) score += SCORING.BLUE_CHIP_BONUS;
+  if (traits.isDeFiKing) score += SCORING.DEFI_KING_BONUS;
+  if (traits.diamondHands) score += SCORING.DIAMOND_HANDS_BONUS;
+  if (traits.hyperactiveDegen) score += SCORING.HYPERACTIVE_BONUS;
+  if (traits.isMemeLord) score += SCORING.MEME_LORD_BONUS;
   
-  console.log(`%c[Scoring] Total: ${score} | Seeker: ${traits.hasSeeker} (+200) | Preorder: ${traits.hasPreorder} (+150) | Combo: ${traits.hasSeeker && traits.hasPreorder} (+200)`, "color: #a855f7; font-weight: bold;");
-  return Math.round(score);
+  // Log breakdown for debugging
+  console.log(`%c[Scoring] Total: ${Math.round(score)} | SOL: ${sol} | Age: ${age}d | Tx: ${tx} | NFTs: ${nfts} | Seeker: ${traits.hasSeeker} | Preorder: ${traits.hasPreorder} | Combo: ${traits.hasCombo}`, "color: #a855f7; font-weight: bold;");
+  
+  return Math.min(Math.round(score), SCORING.MAX_SCORE);
 }
 
 const SOL_LAMPORTS = 1_000_000_000;
@@ -186,23 +194,77 @@ export function useWalletData(address?: string) {
           throw new Error(`DAS API returned ${response.status}`);
         }
 
-        const dasResponse = await response.json();
+        const dasResponse = await response.json() as { result?: { items: DASAsset[] }, error?: { message?: string } };
         
         if (dasResponse.error) {
           console.error(`%c[DAS Error]`, "color: #ef4444;", dasResponse.error);
           throw new Error(dasResponse.error.message || "DAS API error");
         }
         
-        const assets = dasResponse.result?.items || [];
+        const PREORDER_MINT = "2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z";
+        const PREORDER_COLLECTION = "3uejyD3ZwHDGwT8n6KctN3Stnjn9Nih79oXES9VqA38D";
+        
+        interface DASAsset {
+          id: string;
+          content?: {
+            metadata?: {
+              name?: string;
+              symbol?: string;
+            };
+            links?: {
+              image?: string;
+            };
+          };
+          authorities?: { address: string }[];
+          creators?: { address: string }[];
+          grouping?: { group_key: string; group_value: string }[];
+          interface?: string;
+          token_info?: {
+            decimals?: number;
+            supply?: number;
+            balance?: number | string;
+            amount?: number | string;
+          };
+          compression?: {
+            compressed: boolean;
+          };
+        }
+
+        const assets = (dasResponse.result?.items as DASAsset[]) || [];
         const totalAssetsCount = assets.length;
         
-        console.log(`%c[DAS Success] ${totalAssetsCount} total assets found`, "color: #22d3ee; font-weight: bold;");
-        console.log(`%c[DAS Raw Response]`, "color: #a855f7;", dasResponse);
+        console.log(`%c[DAS Success] ${totalAssetsCount} assets found. Performing Nuclear Scan...`, "color: #22d3ee; font-weight: bold;");
+        
+        // NUCLEAR DEBUG: Print Name and Symbol of ALL 355 assets as requested
+        console.log("%c[Nuclear Debug] FULL ASSET SCAN (Name & Symbol):", "color: #f472b6; font-weight: bold;");
+        assets.forEach((a, i) => {
+          const name = a.content?.metadata?.name || 'N/A';
+          const symbol = a.content?.metadata?.symbol || 'N/A';
+          console.log(`[${i}] ${name} (${symbol}) | ID: ${a.id}`);
+        });
+        
+        const foundAsset = assets.find((a: DASAsset) => {
+          const id = (a.id || "");
+          const name = (a.content?.metadata?.name || "");
+          const grouping = a.grouping || [];
+          
+          const isPreorderId = id === PREORDER_MINT;
+          const isPreorderName = name.includes("Chapter 2") || name.includes("Seeker Preorder");
+          const isPreorderGroup = grouping.some(g => g.group_value === PREORDER_COLLECTION);
+
+          return isPreorderId || isPreorderName || isPreorderGroup;
+        });
+
+        if (foundAsset) {
+          console.log("%c[!!!] NUCLEAR MATCH: PREORDER ASSET FOUND!", "color: #10b981; font-weight: bold;", foundAsset);
+        } else {
+          console.log("%c[???] NUCLEAR SCAN: NO PREORDER ASSET FOUND", "color: #ef4444;");
+        }
 
         let nftCount = 0;
         let uniqueTokenCount = 0;
         let hasSeeker = false;
-        let hasPreorder = false;
+        let hasPreorder = !!foundAsset; 
         let isBlueChip = false;
         let hasLstExposure = false;
         let defiProtocolExposure = false;
@@ -210,35 +272,35 @@ export function useWalletData(address?: string) {
         const memeHoldingsSet = new Set<string>();
 
         // 3. Analysis Loop
-        assets.forEach((asset: any) => {
+        assets.forEach((asset: DASAsset) => {
           const content = asset.content || {};
-          const metadata = content.metadata || asset.content?.metadata || {};
-          const name = (metadata.name || content.metadata?.name || asset.id || "").toLowerCase();
-          const symbol = (metadata.symbol || content.metadata?.symbol || "").toLowerCase();
+          const metadata = content.metadata || {};
+          const rawName = (metadata.name || content.metadata?.name || asset.id || "");
+          const name = rawName.toLowerCase();
           
           const mint = asset.id;
           
-          // CRITICAL: Seeker Genesis Detection via grouping
+          // Seeker Genesis Detection
           const grouping = asset.grouping || [];
-          const collectionGroup = grouping.find((g: any) => g.group_key === "collection");
-          const isSeekerGenesis = collectionGroup?.group_value === TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION;
+          const collectionGroup = grouping.find((g) => g.group_key === "collection");
+          const authorities = asset.authorities || [];
+          const creators = asset.creators || [];
           
-          // CRITICAL: Chapter 2 Preorder Detection via exact mint
-          const isChapter2Preorder = mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER;
+          const isSeekerGenesis = 
+            collectionGroup?.group_value === TOKEN_ADDRESSES.SEEKER_GENESIS_COLLECTION ||
+            authorities.some((auth) => auth.address === TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) ||
+            creators.some((c) => c.address === TOKEN_ADDRESSES.SEEKER_MINT_AUTHORITY) ||
+            (name.includes("seeker") && (name.includes("genesis") || name.includes("citizen")));
+          
+          if (isSeekerGenesis) hasSeeker = true;
 
-          // Seeker Detection
-          if (isSeekerGenesis) {
-            console.log(`%c[🎯 SEEKER GENESIS FOUND!] ${metadata.name || mint}`, "color: #22d3ee; font-weight: 900; font-size: 14px;");
-            console.log(`  Collection: ${collectionGroup?.group_value}`);
-            hasSeeker = true;
-          }
+          // Extra Chapter 2 Preorder check within the loop (Nuclear)
+          const isChapter2Preorder = 
+            mint === PREORDER_MINT ||
+            (rawName.includes("Chapter 2") || rawName.includes("Seeker Preorder")) ||
+            grouping.some(g => g.group_value === PREORDER_COLLECTION);
 
-          // Preorder Detection
-          if (isChapter2Preorder) {
-            console.log(`%c[🎯 CHAPTER 2 PREORDER FOUND!] ${metadata.name || mint}`, "color: #fbbf24; font-weight: 900; font-size: 14px;");
-            console.log(`  Mint: ${mint}`);
-            hasPreorder = true;
-          }
+          if (isChapter2Preorder) hasPreorder = true;
 
           // NFT Logic (Decimals 0)
           const iface = (asset.interface || "").toUpperCase();
@@ -247,12 +309,12 @@ export function useWalletData(address?: string) {
           
           const isExplicitNFT = iface.includes("NFT") || iface.includes("PROGRAMMABLE") || iface === "CUSTOM" || asset.compression?.compressed === true;
           const isLikelyNFT = decimals === 0 && (metadata.name || content.links?.image || asset.grouping?.length > 0);
-          const isKnownFungible = iface === "FUNGIBLETOKEN" || iface === "FUNGIBLEASSET" || (tokenInfo.supply > 1 && decimals > 0);
+          const isKnownFungible = iface === "FUNGIBLETOKEN" || iface === "FUNGIBLEASSET" || ((tokenInfo.supply || 0) > 1 && decimals > 0);
 
           if (isExplicitNFT || (isLikelyNFT && !isKnownFungible)) {
             nftCount++;
-            const collectionValue = collectionGroup?.group_value?.toLowerCase() || "";
-            if (BLUE_CHIP_COLLECTION_NAMES.some(bc => name.includes(bc) || collectionValue.includes(bc))) {
+            const collectionValue = collectionGroup?.group_value || "";
+            if (BLUE_CHIP_COLLECTIONS.includes(collectionValue as typeof BLUE_CHIP_COLLECTIONS[number])) {
               isBlueChip = true;
             }
           } else {
@@ -262,17 +324,15 @@ export function useWalletData(address?: string) {
           if (DEFI_POSITION_HINTS.some((hint) => name.includes(hint))) {
             defiProtocolExposure = true;
           }
-          if (LST_ADDRESSES.includes(mint)) {
+          
+          if (Object.values(LST_MINTS).some((m) => m === mint)) {
             hasLstExposure = true;
           }
 
           const memeSymbol = MEME_MINT_LOOKUP[mint];
           if (memeSymbol) {
-            const tokenInfo = asset.token_info || {};
-            const decimals = tokenInfo.decimals ?? 0;
             const balanceRaw = tokenInfo.balance ?? tokenInfo.amount ?? 0;
-            const numericBalance =
-              typeof balanceRaw === "number" ? balanceRaw : parseFloat(balanceRaw || "0");
+            const numericBalance = typeof balanceRaw === "number" ? balanceRaw : parseFloat(balanceRaw || "0");
             const uiAmount = decimals > 0 ? numericBalance / Math.pow(10, decimals) : numericBalance;
             if (uiAmount > 0) {
               memeHoldingsSet.add(memeSymbol);
@@ -282,12 +342,24 @@ export function useWalletData(address?: string) {
         });
 
         // 4. SPL Fallback Check
-        tokenAccountsResponse.value.forEach((ta: any) => {
+        tokenAccountsResponse.value.forEach((ta: { 
+          account: { 
+            data: { 
+              parsed: { 
+                info: { 
+                  mint: string; 
+                  tokenAmount: { uiAmount: number; decimals: number } 
+                } 
+              } 
+            } 
+          } 
+        }) => {
           const info = ta.account.data.parsed.info;
           if (info.tokenAmount.uiAmount > 0) {
             const mint = info.mint;
-            if (mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER) hasPreorder = true;
-            if (LST_ADDRESSES.includes(mint)) hasLstExposure = true;
+            const isPreorderMint = mint === TOKEN_ADDRESSES.CHAPTER2_PREORDER;
+            if (isPreorderMint) hasPreorder = true;
+            if (Object.values(LST_MINTS).some((m: string) => m === mint)) hasLstExposure = true;
             const memeSymbol = MEME_MINT_LOOKUP[mint];
             if (memeSymbol) {
               const amount = info.tokenAmount.uiAmount || 0;
@@ -296,10 +368,14 @@ export function useWalletData(address?: string) {
                 memeValueUSD += amount * (MEME_COIN_PRICES_USD[memeSymbol] || 0);
               }
             }
-            if (!assets.some((a: any) => a.id === mint)) {
+            if (!assets.some((a: { id: string }) => a.id === mint)) {
               uniqueTokenCount++;
               // If it has decimals 0 and was missed, it's an NFT
-              if (info.tokenAmount.decimals === 0) nftCount++;
+              if (info.tokenAmount.decimals === 0) {
+                nftCount++;
+                // Check if this missed asset is a Seeker/Preorder by mint address
+                if (mint === "2DMMamkkxQ6zDMBtkFp8KH7FoWzBMBA1CGTYwom4QH6Z") hasPreorder = true;
+              }
             }
           }
         });
@@ -347,7 +423,7 @@ export function useWalletData(address?: string) {
   return walletData;
 }
 
-function isFungibleAsset(asset: any): boolean {
+function isFungibleAsset(asset: { interface?: string; token_info?: { supply?: number; decimals?: number } }): boolean {
   const iface = (asset.interface || "").toUpperCase();
   if (iface === "FUNGIBLETOKEN" || iface === "FUNGIBLEASSET") return true;
   const supply = asset.token_info?.supply || 0;

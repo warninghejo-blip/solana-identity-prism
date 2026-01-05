@@ -1,8 +1,8 @@
+import { WalletContextState } from '@solana/wallet-adapter-react';
 import { Connection, PublicKey, SystemProgram, Transaction, LAMPORTS_PER_SOL } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import { HELIUS_CONFIG, MINT_CONFIG, TREASURY_ADDRESS } from '@/constants';
 import type { WalletTraits } from '@/hooks/useWalletData';
-import type { PhantomProvider } from '@/hooks/usePhantomWallet';
 
 export interface MintMetadata {
   collection: string;
@@ -31,7 +31,7 @@ export interface MintMetadata {
 }
 
 export interface MintIdentityPrismArgs {
-  provider: PhantomProvider;
+  wallet: WalletContextState;
   address: string;
   traits: WalletTraits;
   score: number;
@@ -51,17 +51,17 @@ function encodeBase64(value: string): string {
 }
 
 export async function mintIdentityPrism({
-  provider,
+  wallet,
   address,
   traits,
   score,
 }: MintIdentityPrismArgs): Promise<MintIdentityPrismResult> {
-  if (!provider) {
-    throw new Error('Wallet provider not available');
+  if (!wallet || !wallet.publicKey || !wallet.sendTransaction) {
+    throw new Error('Wallet not ready or does not support transactions');
   }
 
   const connection = new Connection(HELIUS_CONFIG.RPC_URL, 'confirmed');
-  const payer = provider.publicKey ?? new PublicKey(address);
+  const payer = wallet.publicKey;
   const treasury = new PublicKey(TREASURY_ADDRESS);
   const priceLamports = Math.round(MINT_CONFIG.PRICE_SOL * LAMPORTS_PER_SOL);
 
@@ -85,7 +85,7 @@ export async function mintIdentityPrism({
       nfts: traits.nftCount,
       transactions: traits.txCount,
       solBalance: traits.solBalance,
-      walletAgeYears: traits.walletAgeYears,
+      walletAgeYears: Math.floor(traits.walletAgeDays / 365),
     },
     timestamp: new Date().toISOString(),
     address,
@@ -98,28 +98,18 @@ export async function mintIdentityPrism({
   });
 
   const transaction = new Transaction().add(transferIx);
-  transaction.feePayer = payer;
+  
+  const signature = await wallet.sendTransaction(transaction, connection);
+  
   const latestBlockhash = await connection.getLatestBlockhash('finalized');
-  transaction.recentBlockhash = latestBlockhash.blockhash;
-
-  let signature: string;
-  if (provider.signAndSendTransaction) {
-    const result = await provider.signAndSendTransaction(transaction);
-    signature = result.signature;
-  } else if (provider.signTransaction) {
-    const signed = await provider.signTransaction(transaction);
-    signature = await connection.sendRawTransaction(signed.serialize());
-    await connection.confirmTransaction(
-      {
-        signature,
-        blockhash: latestBlockhash.blockhash,
-        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
-      },
-      'confirmed'
-    );
-  } else {
-    throw new Error('Wallet does not support transaction signing');
-  }
+  await connection.confirmTransaction(
+    {
+      signature,
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    },
+    'confirmed'
+  );
 
   return {
     signature,

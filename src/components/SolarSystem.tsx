@@ -1,18 +1,34 @@
+import { 
+  Vector3, 
+  MathUtils, 
+  PerspectiveCamera, 
+  EventDispatcher, 
+  DoubleSide, 
+  AdditiveBlending, 
+  Color, 
+  FrontSide, 
+  NormalBlending, 
+  Points, 
+  Mesh, 
+  Group, 
+  LineSegments, 
+  CanvasTexture, 
+  ClampToEdgeWrapping, 
+  ACESFilmicToneMapping,
+  Texture,
+  Vector2,
+  BackSide
+} from 'three';
 import { useRef, useMemo, Suspense, useEffect, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { Stars, OrbitControls } from '@react-three/drei';
 import { EffectComposer, Bloom, ChromaticAberration, Vignette, Noise } from '@react-three/postprocessing';
 import { BlendFunction } from 'postprocessing';
-import * as THREE from 'three';
-import { SeekerSun } from './SeekerSun';
-import {
-  generateSolarSystem,
-  type PlanetData,
-  type MoonData,
-  type SpaceDustConfig,
-  type NebulaConfig,
-} from '@/lib/solarSystemGenerator';
 import { VISUAL_CONFIG } from '@/constants';
+import { SeekerSun } from './SeekerSun';
+import type { PlanetData, MoonData, SolarSystemData, SpaceDustConfig, NebulaConfig } from '@/lib/solarSystemGenerator';
+import { generatePlanetTextures, generateCloudTexture, generateMoonTexture, generateSolarSystem } from '@/lib/solarSystemGenerator';
+import { useWalletData } from '@/hooks/useWalletData';
 import type { WalletTraits } from '@/hooks/useWalletData';
 
 const PLANET_TEXTURE_SIZE = 256;
@@ -27,107 +43,7 @@ function createSeededRandom(seed: number) {
   };
 }
 
-function createCanvasTexture(seed: number, draw: (ctx: CanvasRenderingContext2D, rand: () => number) => void) {
-  const canvas = document.createElement('canvas');
-  canvas.width = PLANET_TEXTURE_SIZE;
-  canvas.height = PLANET_TEXTURE_SIZE;
-  const ctx = canvas.getContext('2d')!;
-  const rand = createSeededRandom(seed);
-  draw(ctx, rand);
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.needsUpdate = true;
-  texture.wrapS = texture.wrapT = THREE.ClampToEdgeWrapping;
-  return texture;
-}
-
-function generatePlanetTextures(planet: PlanetData) {
-  const { type, surface, materialSeed } = planet;
-  const baseColor = type.baseColor;
-  const accent = type.accent;
-
-  const basicTexture = () =>
-    createCanvasTexture(materialSeed, (ctx) => {
-      ctx.fillStyle = baseColor;
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      ctx.globalAlpha = 0.2;
-      ctx.fillStyle = accent;
-      for (let i = 0; i < 80; i++) {
-        const radius = 10 + Math.random() * 25;
-        ctx.beginPath();
-        ctx.arc(Math.random() * ctx.canvas.width, Math.random() * ctx.canvas.height, radius, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    });
-
-  const oceanicTexture = () =>
-    createCanvasTexture(materialSeed, (ctx, rand) => {
-      ctx.fillStyle = baseColor;
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      ctx.globalAlpha = 0.25;
-      ctx.fillStyle = accent;
-      for (let i = 0; i < 30; i++) {
-        const x = rand() * ctx.canvas.width;
-        const y = rand() * ctx.canvas.height;
-        const w = 80 + rand() * 120;
-        const h = 30 + rand() * 60;
-        ctx.beginPath();
-        ctx.ellipse(x, y, w, h, rand() * Math.PI, 0, Math.PI * 2);
-        ctx.fill();
-      }
-      ctx.globalAlpha = 1;
-    });
-
-  const crateredTexture = () =>
-    createCanvasTexture(materialSeed, (ctx, rand) => {
-      ctx.fillStyle = baseColor;
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      for (let i = 0; i < 120; i++) {
-        const radius = 5 + rand() * 25;
-        const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, radius);
-        const darker = new THREE.Color(baseColor).multiplyScalar(0.5).getStyle();
-        gradient.addColorStop(0, accent);
-        gradient.addColorStop(1, darker);
-        ctx.save();
-        ctx.translate(rand() * ctx.canvas.width, rand() * ctx.canvas.height);
-        ctx.beginPath();
-        ctx.fillStyle = gradient;
-        ctx.arc(0, 0, radius, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
-      }
-    });
-
-  const gasTexture = () =>
-    createCanvasTexture(materialSeed, (ctx, rand) => {
-      ctx.fillStyle = baseColor;
-      ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-      const stripeCount = 12;
-      for (let i = 0; i < stripeCount; i++) {
-        const y = (i / stripeCount) * ctx.canvas.height;
-        const gradient = ctx.createLinearGradient(0, y, ctx.canvas.width, y + rand() * 30);
-        gradient.addColorStop(0, accent);
-        gradient.addColorStop(1, baseColor);
-        ctx.fillStyle = gradient;
-        ctx.globalAlpha = 0.7;
-        ctx.fillRect(0, y, ctx.canvas.width, ctx.canvas.height / stripeCount + rand() * 10);
-      }
-      ctx.globalAlpha = 1;
-    });
-
-  switch (surface) {
-    case 'oceanic':
-      return { map: oceanicTexture(), bumpScale: 0.02 };
-    case 'cratered': {
-      const texture = crateredTexture();
-      return { map: texture, bumpMap: texture, bumpScale: 0.06 };
-    }
-    case 'gas':
-      return { map: gasTexture(), bumpScale: 0 };
-    default:
-      return { map: basicTexture(), bumpScale: 0.02 };
-  }
-}
+// Texture generation now centralized in solarSystemGenerator.ts
 
 interface SolarSystemProps {
   traits: WalletTraits | null;
@@ -135,68 +51,78 @@ interface SolarSystemProps {
   isWarping?: boolean;
 }
 
-function CinematicCamera({ isWarping }: { isWarping?: boolean }) {
-  const { camera, size, controls } = useThree();
-  const targetPos = useRef(new THREE.Vector3(0, 15, 30));
+function CinematicCamera({ isWarping, hasTraits }: { isWarping?: boolean; hasTraits: boolean }) {
+  const { camera, size } = useThree();
+  const targetPos = useRef(new Vector3(0, 15, 35));
   const targetFov = useRef(60);
-  const shakeRef = useRef(new THREE.Vector3());
-  const [isTransitioning, setIsTransitioning] = useState(false);
+  const currentFov = useRef(60);
+  const lookAtPos = useRef(new Vector3(0, 0, 0));
+  const isMobile = size.width < 768;
+  const [isTransitioning, setIsTransitioning] = useState(true);
   const userInteracted = useRef(false);
-  
+  const controls = useThree((state) => state.controls);
+
   useEffect(() => {
-    const isMobile = size.width / size.height < 1;
-    setIsTransitioning(true);
-    userInteracted.current = false;
-    
     if (isWarping) {
-      camera.position.set(0, 0, 250);
-      targetPos.current.set(0, 0, 40);
+      targetPos.current.set(0, 0, 50);
       targetFov.current = 160;
-    } else if (isMobile) {
-      targetPos.current.set(0, 35, 45);
-      targetFov.current = 85;
+      lookAtPos.current.set(0, 0, 0);
+    } else if (hasTraits) {
+      // System in upper screen half with stats card clearance
+      if (isMobile) {
+        targetPos.current.set(0, 35, 90);
+        targetFov.current = 85;
+        lookAtPos.current.set(0, 2, 0); 
+      } else {
+        targetPos.current.set(0, 30, 80);
+        targetFov.current = 65;
+        lookAtPos.current.set(0, 2, 0);
+      }
     } else {
-      targetPos.current.set(0, 15, 30);
-      targetFov.current = 60;
+      // Landing/Neutral position
+      if (isMobile) {
+        targetPos.current.set(0, 28, 60);
+        targetFov.current = 85;
+        lookAtPos.current.set(0, 2, 0);
+      } else {
+        targetPos.current.set(0, 22, 55);
+        targetFov.current = 60;
+        lookAtPos.current.set(0, 2, 0);
+      }
     }
     
     const timer = setTimeout(() => {
       setIsTransitioning(false);
     }, 4000);
     return () => clearTimeout(timer);
-  }, [size, isWarping, camera]);
+  }, [size, isWarping, hasTraits, isMobile]);
 
-  // Listen for user interaction on controls
   useEffect(() => {
     if (!controls) return;
     const onStart = () => {
       userInteracted.current = true;
       setIsTransitioning(false);
     };
-    (controls as any).addEventListener('start', onStart);
-    return () => (controls as any).removeEventListener('start', onStart);
+    (controls as unknown as EventDispatcher).addEventListener('start', onStart);
+    return () => (controls as unknown as EventDispatcher).removeEventListener('start', onStart);
   }, [controls]);
 
-  useFrame(() => {
+  useFrame((state) => {
     if (isWarping) {
       const intensity = 0.8;
-      shakeRef.current.set(
-        (Math.random() - 0.5) * intensity,
-        (Math.random() - 0.5) * intensity,
-        0
-      );
-    } else {
-      shakeRef.current.lerp(new THREE.Vector3(), 0.1);
-    }
-
-    // Only force camera position during transition and if user hasn't interacted
-    if ((isWarping || isTransitioning) && !userInteracted.current) {
-      camera.position.lerp(targetPos.current, isWarping ? 0.06 : 0.05);
-      camera.position.add(shakeRef.current);
+      camera.position.x += (Math.random() - 0.5) * intensity;
+      camera.position.y += (Math.random() - 0.5) * intensity;
+    } else if (isTransitioning && !userInteracted.current) {
+      camera.position.lerp(targetPos.current, 0.02);
+      currentFov.current = MathUtils.lerp(currentFov.current, targetFov.current, 0.02);
       
-      const pCam = camera as THREE.PerspectiveCamera;
-      pCam.fov = THREE.MathUtils.lerp(pCam.fov, targetFov.current, 0.05);
-      pCam.updateProjectionMatrix();
+      // Fix TS error: Property 'fov' does not exist on type 'Camera'
+      if ('fov' in camera) {
+        (camera as PerspectiveCamera).fov = currentFov.current;
+      }
+      
+      camera.lookAt(lookAtPos.current);
+      camera.updateProjectionMatrix();
     }
   });
   
@@ -207,78 +133,124 @@ function OrbitPath({ radius, color }: { radius: number; color: string }) {
   return (
     <mesh rotation={[Math.PI / 2, 0, 0]}>
       <ringGeometry args={[radius - 0.02, radius + 0.02, 128]} />
-      <meshBasicMaterial color={color} transparent opacity={0.05} side={THREE.DoubleSide} blending={THREE.AdditiveBlending} />
+      <meshBasicMaterial color={color} transparent opacity={0.05} side={DoubleSide} blending={AdditiveBlending} />
     </mesh>
   );
 }
 
-function Moon({ moon, planetPosition }: { moon: MoonData; planetPosition: THREE.Vector3 }) {
-  const ref = useRef<THREE.Mesh>(null);
+function Moon({ moon }: { moon: MoonData }) {
+  const ref = useRef<Mesh>(null);
+  
+  const craterTexture = useMemo(() => {
+    const seed = parseInt(moon.id.replace(/\D/g, '')) || 12345;
+    return generateMoonTexture(seed);
+  }, [moon.id]);
+  
   useFrame((state) => {
     if (ref.current) {
-      const angle = moon.initialAngle + state.clock.elapsedTime * moon.orbitSpeed;
-      ref.current.position.x = planetPosition.x + Math.cos(angle) * moon.orbitRadius;
-      ref.current.position.y = planetPosition.y + Math.sin(angle * 0.5) * 0.1;
-      ref.current.position.z = planetPosition.z + Math.sin(angle) * moon.orbitRadius;
+      const angle = moon.initialAngle + state.clock.elapsedTime * VISUAL_CONFIG.ANIMATION.MOON_ORBIT;
+      ref.current.position.x = Math.cos(angle) * moon.orbitRadius;
+      ref.current.position.y = Math.sin(angle * 0.5) * (moon.inclination || 0);
+      ref.current.position.z = Math.sin(angle) * moon.orbitRadius;
+      ref.current.rotation.y += 0.005;
     }
   });
+  
   return (
     <mesh ref={ref}>
-      <sphereGeometry args={[moon.size, 24, 24]} />
-      <meshStandardMaterial color={moon.color} roughness={0.8} metalness={0.1} />
+      <sphereGeometry args={[moon.size, 32, 32]} />
+      <meshPhysicalMaterial 
+        color="#8b8b8b" 
+        map={craterTexture}
+        bumpMap={craterTexture}
+        bumpScale={0.02}
+        roughness={0.95} 
+        metalness={0.05}
+        clearcoat={0.1}
+        clearcoatRoughness={0.9}
+      />
+    </mesh>
+  );
+}
+
+interface CloudLayerProps {
+  planetSize: number;
+  seed: number;
+}
+
+function CloudLayer({ planetSize, seed }: CloudLayerProps) {
+  const cloudRef = useRef<Mesh>(null);
+  
+  const cloudTexture = useMemo(() => generateCloudTexture(seed), [seed]);
+  
+  useFrame((state, delta) => {
+    if (cloudRef.current) {
+      cloudRef.current.rotation.y += delta * 0.03;
+    }
+  });
+  
+  return (
+    <mesh ref={cloudRef} scale={1.03}>
+      <sphereGeometry args={[planetSize, 64, 64]} />
+      <meshStandardMaterial
+        map={cloudTexture}
+        transparent
+        opacity={0.7}
+        depthWrite={false}
+        side={FrontSide}
+        blending={NormalBlending}
+      />
     </mesh>
   );
 }
 
 function PlanetRing({ planetSize }: { planetSize: number }) {
-  const pointsRef = useRef<THREE.Points>(null);
+  const pointsRef = useRef<Points>(null);
+  const circleTex = useMemo(() => createCircleTexture(), []);
   const { positions, colors, count } = useMemo(() => {
-    const particleCount = 4000;
+    const particleCount = 8000;
     const pos = new Float32Array(particleCount * 3);
     const col = new Float32Array(particleCount * 3);
-    const innerRadius = planetSize * 1.6;
-    const outerRadius = planetSize * 2.4;
-
+    const color = new Color('#ffffff');
+    
     for (let i = 0; i < particleCount; i++) {
       const i3 = i * 3;
       const angle = Math.random() * Math.PI * 2;
-      const radius = innerRadius + Math.random() * (outerRadius - innerRadius);
-      const height = (Math.random() - 0.5) * planetSize * 0.02;
-
-      pos[i3] = Math.cos(angle) * radius;
-      pos[i3 + 1] = height;
-      pos[i3 + 2] = Math.sin(angle) * radius;
-
-      const tint = 0.8 + Math.random() * 0.2;
-      col[i3] = 0.85 * tint;
-      col[i3 + 1] = 0.95 * tint;
-      col[i3 + 2] = 1.0;
+      const dist = planetSize * 1.4 + Math.random() * planetSize * 0.8;
+      pos[i3] = Math.cos(angle) * dist;
+      pos[i3 + 1] = (Math.random() - 0.5) * 0.02;
+      pos[i3 + 2] = Math.sin(angle) * dist;
+      
+      const brightness = 0.3 + Math.random() * 0.7;
+      col[i3] = color.r * brightness;
+      col[i3 + 1] = color.g * brightness;
+      col[i3 + 2] = color.b * brightness;
     }
-
     return { positions: pos, colors: col, count: particleCount };
   }, [planetSize]);
 
   useFrame(() => {
     if (pointsRef.current) {
-      pointsRef.current.rotation.y += 0.00008;
+      pointsRef.current.rotation.y += 0.003;
     }
   });
 
   return (
-    <group rotation={[Math.PI / 2.3, 0, 0]}>
+    <group>
       <points ref={pointsRef}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={count} array={positions} itemSize={3} />
           <bufferAttribute attach="attributes-color" count={count} array={colors} itemSize={3} />
         </bufferGeometry>
         <pointsMaterial
-          size={0.012}
+          map={circleTex}
+          size={0.008}
           vertexColors
           transparent
-          opacity={0.45}
-          sizeAttenuation
-          blending={THREE.AdditiveBlending}
+          opacity={0.5}
+          blending={AdditiveBlending}
           depthWrite={false}
+          sizeAttenuation
         />
       </points>
     </group>
@@ -286,43 +258,82 @@ function PlanetRing({ planetSize }: { planetSize: number }) {
 }
 
 function Planet({ planet, orbitColor }: { planet: PlanetData; orbitColor: string }) {
-  const groupRef = useRef<THREE.Group>(null);
-  const meshRef = useRef<THREE.Mesh>(null);
-  const positionRef = useRef(new THREE.Vector3());
-  const textures = useMemo(() => generatePlanetTextures(planet), [planet]);
+  const groupRef = useRef<Group>(null);
+  const meshRef = useRef<Mesh>(null);
+  const atmosphereRef = useRef<Mesh>(null);
+  const textures = useMemo(() => generatePlanetTextures(planet.surface, planet.materialSeed), [planet.id, planet.materialSeed]);
   
-  useFrame((state) => {
+  useFrame((state, delta) => {
     if (groupRef.current) {
-      const angle = planet.initialAngle + state.clock.elapsedTime * planet.orbitSpeed;
-      groupRef.current.position.set(Math.cos(angle) * planet.orbitRadius, 0, Math.sin(angle) * planet.orbitRadius);
-      positionRef.current.copy(groupRef.current.position);
+      const angle = planet.initialAngle + state.clock.elapsedTime * VISUAL_CONFIG.ANIMATION.PLANET_ORBIT;
+      groupRef.current.position.set(
+        Math.cos(angle) * planet.orbitRadius, 
+        0, 
+        Math.sin(angle) * planet.orbitRadius
+      );
     }
-    if (meshRef.current) meshRef.current.rotation.y += planet.rotationSpeed;
+    if (meshRef.current) {
+      meshRef.current.rotation.y += delta * 0.075;
+    }
+    if (atmosphereRef.current) {
+      atmosphereRef.current.rotation.y += delta * 0.1;
+    }
   });
   
   return (
     <>
       <OrbitPath radius={planet.orbitRadius} color={orbitColor} />
       <group ref={groupRef}>
+        {/* Main Planet Body - MeshPhysicalMaterial for photorealistic rendering */}
         <mesh ref={meshRef}>
-          <sphereGeometry args={[planet.size, 64, 64]} />
-          <meshStandardMaterial
+          <sphereGeometry args={[planet.size, 128, 128]} />
+          <meshPhysicalMaterial
             color={planet.type.baseColor}
-            roughness={planet.type.roughness}
-            metalness={planet.type.metalness}
             map={textures.map}
             bumpMap={textures.bumpMap}
             bumpScale={textures.bumpScale}
+            roughness={planet.type.name === 'ice' ? 0.3 : 0.85}
+            metalness={planet.type.name === 'ice' ? 0.1 : 0.15}
+            clearcoat={planet.type.name === 'ice' ? 0.8 : 0.2}
+            clearcoatRoughness={planet.type.name === 'ice' ? 0.2 : 0.6}
+            ior={planet.type.name === 'ice' ? 1.31 : 1.45}
+            sheen={planet.type.name === 'terrestrial' ? 0.5 : 0}
+            sheenRoughness={0.8}
+            sheenColor={new Color(planet.type.accent)}
+            emissive={new Color(planet.type.baseColor)}
+            emissiveIntensity={planet.type.name === 'volcanic' ? 0.4 : 0.15}
+            transparent={false}
+            depthWrite={true}
+            depthTest={true}
+            toneMapped={true}
           />
         </mesh>
+        
+        {/* Atmosphere Layer (Scale 1.03) - Cinematic Fresnel/Rim Light */}
+        <mesh ref={atmosphereRef} scale={1.03}>
+          <sphereGeometry args={[planet.size, 64, 64]} />
+          <meshStandardMaterial
+            color={planet.type.name === 'terrestrial' ? '#ffffff' : planet.type.accent}
+            transparent={true}
+            opacity={0.2}
+            side={BackSide}
+            blending={AdditiveBlending}
+            depthWrite={false}
+            toneMapped={false}
+          />
+        </mesh>
+
+        {planet.type.name === 'terrestrial' && <CloudLayer planetSize={planet.size} seed={planet.materialSeed} />}
         {planet.hasRing && <PlanetRing planetSize={planet.size} />}
-        {planet.moons.map((m: any) => <Moon key={m.id} moon={m} planetPosition={positionRef.current} />)}
+        {planet.moons.map((m: MoonData) => (
+          <Moon key={m.id} moon={m} />
+        ))}
       </group>
     </>
   );
 }
 
-function createCircleTexture(): THREE.Texture {
+function createCircleTexture(): Texture {
   const canvas = document.createElement('canvas');
   canvas.width = 64; canvas.height = 64;
   const ctx = canvas.getContext('2d')!;
@@ -330,26 +341,26 @@ function createCircleTexture(): THREE.Texture {
   gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
   gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
   ctx.fillStyle = gradient; ctx.fillRect(0, 0, 64, 64);
-  const tex = new THREE.CanvasTexture(canvas); tex.needsUpdate = true; return tex;
+  const tex = new CanvasTexture(canvas); tex.needsUpdate = true; return tex;
 }
 
 function SpaceDust({ config }: { config: SpaceDustConfig }) {
-  const pointsRef = useRef<THREE.Points>(null);
+  const pointsRef = useRef<Points>(null);
   const circleTex = useMemo(() => createCircleTexture(), []);
   const { positions, colors, count } = useMemo(() => {
-    const targetCount = Math.min(config.particleCount, 1800);
+    const targetCount = Math.min(config.particleCount, 2500);
     const pos = new Float32Array(targetCount * 3);
     const col = new Float32Array(targetCount * 3);
-    const palette = ['#f8fbff', '#c9e7ff', '#a5d2ff', '#ffffff'];
+    const palette = ['#ffffff', '#e0f2ff', '#bde3ff'];
     for (let i = 0; i < targetCount; i++) {
       const i3 = i * 3;
       const theta = Math.random() * Math.PI * 2;
       const phi = Math.acos(2 * Math.random() - 1);
-      const r = 8 + Math.random() * config.spreadRadius;
+      const r = 5 + Math.random() * config.spreadRadius * 1.5;
       pos[i3] = r * Math.sin(phi) * Math.cos(theta);
-      pos[i3 + 1] = (Math.random() - 0.5) * config.spreadRadius * 0.2;
+      pos[i3 + 1] = 0; // Strictly flat disk for maximum clarity
       pos[i3 + 2] = r * Math.sin(phi) * Math.sin(theta);
-      const swatch = new THREE.Color(palette[Math.floor(Math.random() * palette.length)]);
+      const swatch = new Color(palette[Math.floor(Math.random() * palette.length)]);
       col[i3] = swatch.r; col[i3 + 1] = swatch.g; col[i3 + 2] = swatch.b;
     }
     return { positions: pos, colors: col, count: targetCount };
@@ -357,7 +368,7 @@ function SpaceDust({ config }: { config: SpaceDustConfig }) {
 
   useFrame(() => {
     if (pointsRef.current) {
-      pointsRef.current.rotation.y += 0.00005;
+      pointsRef.current.rotation.y += 0.00002;
     }
   });
 
@@ -369,11 +380,11 @@ function SpaceDust({ config }: { config: SpaceDustConfig }) {
       </bufferGeometry>
       <pointsMaterial
         map={circleTex}
-        size={0.07}
+        size={0.03}
         vertexColors
         transparent
-        opacity={0.25}
-        blending={THREE.AdditiveBlending}
+        opacity={0.15}
+        blending={AdditiveBlending}
         depthWrite={false}
         sizeAttenuation
       />
@@ -382,7 +393,7 @@ function SpaceDust({ config }: { config: SpaceDustConfig }) {
 }
 
 function HyperjumpLines() {
-  const lineRef = useRef<THREE.LineSegments>(null);
+  const lineRef = useRef<LineSegments>(null);
   const count = 1200;
   const { positions } = useMemo(() => {
     const pos = new Float32Array(count * 6);
@@ -418,40 +429,49 @@ function HyperjumpLines() {
       <bufferGeometry>
         <bufferAttribute attach="attributes-position" count={count * 2} array={positions} itemSize={3} />
       </bufferGeometry>
-      <lineBasicMaterial color="#ffffff" transparent opacity={1.0} blending={THREE.AdditiveBlending} />
+      <lineBasicMaterial color="#ffffff" transparent opacity={1.0} blending={AdditiveBlending} />
     </lineSegments>
   );
 }
 
-function Starfield({ isWarping }: { isWarping?: boolean }) {
+function Starfield() {
   return (
-    <Stars
-      radius={isWarping ? 50 : 350} depth={isWarping ? 5 : 80} count={isWarping ? 6000 : 15000}
-      factor={isWarping ? 0.1 : 6} saturation={0} fade={!isWarping} speed={isWarping ? 50 : 0.2}
+    <Stars 
+      radius={300} 
+      depth={60} 
+      count={5000} 
+      factor={8} 
+      saturation={0} 
+      fade 
     />
   );
 }
 
 function Nebula({ config }: { config?: NebulaConfig }) {
-  const nebulaRef = useRef<THREE.Points>(null);
+  const nebulaRef = useRef<Points>(null);
+  const circleTex = useMemo(() => createCircleTexture(), []);
   const { positions, colors, count } = useMemo(() => {
     if (!config) return { positions: new Float32Array(0), colors: new Float32Array(0), count: 0 };
     const pointCount = 4000;
     const pos = new Float32Array(pointCount * 3);
     const col = new Float32Array(pointCount * 3);
+    
+    // Replace nebula colors with white/pale blue "star dust" as requested
+    const palette = ['#ffffff', '#f0faff', '#d9f2ff'];
+    
     for (let i = 0; i < pointCount; i++) {
       const i3 = i * 3;
       const radius = config.radius * (0.3 + Math.random() * 0.7);
       const angle = Math.random() * Math.PI * 2;
-      const height = (Math.random() - 0.5) * config.radius * 0.3;
+      const height = 0; // Strictly flat disk
       pos[i3] = Math.cos(angle) * radius;
       pos[i3 + 1] = height;
       pos[i3 + 2] = Math.sin(angle) * radius;
 
-      const color = new THREE.Color(config.colors[i % config.colors.length]);
-      col[i3] = color.r;
-      col[i3 + 1] = color.g;
-      col[i3 + 2] = color.b;
+      const swatch = new Color(palette[Math.floor(Math.random() * palette.length)]);
+      col[i3] = swatch.r;
+      col[i3 + 1] = swatch.g;
+      col[i3 + 2] = swatch.b;
     }
     return { positions: pos, colors: col, count: pointCount };
   }, [config]);
@@ -471,13 +491,14 @@ function Nebula({ config }: { config?: NebulaConfig }) {
         <bufferAttribute attach="attributes-color" count={count} array={colors} itemSize={3} />
       </bufferGeometry>
       <pointsMaterial
-        size={0.4}
+        map={circleTex}
+        size={0.04}
         sizeAttenuation
         vertexColors
         transparent
-        opacity={config.intensity}
+        opacity={0.2}
         depthWrite={false}
-        blending={THREE.AdditiveBlending}
+        blending={AdditiveBlending}
       />
     </points>
   );
@@ -486,6 +507,7 @@ function Nebula({ config }: { config?: NebulaConfig }) {
 function SolarSystemScene({ traits, walletAddress, isWarping }: SolarSystemProps) {
   const systemData = useMemo(() => traits ? generateSolarSystem(traits, walletAddress) : null, [traits, walletAddress]);
   const [bloomFlash, setBloomFlash] = useState(0);
+  const hasTraits = !!traits;
 
   useEffect(() => {
     if (isWarping) {
@@ -496,7 +518,7 @@ function SolarSystemScene({ traits, walletAddress, isWarping }: SolarSystemProps
 
   return (
     <>
-      <CinematicCamera isWarping={isWarping} />
+      <CinematicCamera isWarping={isWarping} hasTraits={hasTraits} />
       <ambientLight intensity={0.05} />
       <Starfield isWarping={isWarping} />
       
@@ -504,17 +526,27 @@ function SolarSystemScene({ traits, walletAddress, isWarping }: SolarSystemProps
         <>
           <Nebula config={systemData.nebula} />
           <SeekerSun profile={systemData.stellarProfile} walletSeed={walletAddress} />
-          {systemData.planets.map((p: any) => <Planet key={p.id} planet={p} orbitColor={systemData.orbitColor} />)}
+          {systemData.planets.map((p: PlanetData) => <Planet key={p.id} planet={p} orbitColor={systemData.orbitColor} />)}
           <SpaceDust config={systemData.spaceDust} />
           <OrbitControls makeDefault enablePan={false} enableZoom={true} minDistance={8} maxDistance={120} dampingFactor={0.05} enableDamping />
         </>
       )}
 
       <EffectComposer multisampling={0}>
-        <Bloom intensity={(isWarping ? 2.0 : 0.35) + bloomFlash * 3} luminanceThreshold={0.92} luminanceSmoothing={0.97} mipmapBlur />
-        <ChromaticAberration offset={new THREE.Vector2(0.0005, 0.0005)} radialModulation modulationOffset={0.9} />
-        <Vignette darkness={0.5} offset={0.3} />
-        <Noise opacity={0.015} blendFunction={BlendFunction.SOFT_LIGHT} />
+        <Bloom 
+          intensity={2.0} 
+          radius={0.5}
+          luminanceThreshold={0.85} 
+          luminanceSmoothing={0.9} 
+          mipmapBlur 
+        />
+        <ChromaticAberration 
+          offset={new Vector2(0.0005, 0.0005)} 
+          radialModulation 
+          modulationOffset={0.9} 
+        />
+        <Vignette darkness={0.6} offset={0.25} />
+        <Noise opacity={0.018} blendFunction={BlendFunction.SOFT_LIGHT} />
       </EffectComposer>
     </>
   );
@@ -524,7 +556,7 @@ export function SolarSystem({ traits, walletAddress, isWarping }: SolarSystemPro
   const isConnected = walletAddress && walletAddress !== '0xDemo...Wallet';
   return (
     <div className="w-full h-full absolute inset-0 bg-black">
-      <Canvas camera={{ position: [0, 0, 150], fov: 60, far: 2000 }} gl={{ antialias: true, toneMapping: THREE.ACESFilmicToneMapping }}>
+      <Canvas camera={{ position: [0, 0, 150], fov: 60, far: 2000 }} gl={{ antialias: true, toneMapping: ACESFilmicToneMapping }}>
         <Suspense fallback={null}>
           <SolarSystemScene traits={traits} walletAddress={walletAddress} isWarping={isWarping} />
           {!isConnected && !traits && !isWarping && (

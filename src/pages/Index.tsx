@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { SolarSystem } from "@/components/SolarSystem";
 import { useWalletData } from "@/hooks/useWalletData";
-import { usePhantomWallet } from "@/hooks/usePhantomWallet";
+import { useWallet } from "@solana/wallet-adapter-react";
+import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
+import { mintIdentityPrism } from "@/lib/mintIdentityPrism";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import {
   Loader2,
   Sparkles,
@@ -31,20 +33,16 @@ const Index = () => {
   const [isWarping, setIsWarping] = useState(false);
   const [viewState, setViewState] = useState<ViewState>("landing");
 
+  const wallet = useWallet();
   const {
-    address: connectedAddress,
-    isConnected,
-    isConnecting,
-    hasProvider,
-    error: walletError,
-    connectWallet,
-  } = usePhantomWallet();
+    publicKey: connectedAddress,
+    connected: isConnected,
+  } = wallet;
 
-  const resolvedAddress = manualAddress || (isConnected ? connectedAddress : undefined) || undefined;
+  const resolvedAddress = manualAddress || (connectedAddress ? connectedAddress.toBase58() : undefined) || undefined;
   const walletData = useWalletData(resolvedAddress);
   const { traits, score, address, isLoading, error: dataError } = walletData;
   const displayAddress = useMemo(() => shortenAddress(address), [address]);
-  const combinedError = walletError ?? dataError;
   const isExplorerMode = Boolean(manualAddress);
 
   // Unified State Machine for UI
@@ -74,7 +72,7 @@ const Index = () => {
       setIsWarping(true);
       setTimeout(() => setIsWarping(false), 2500);
     }
-  }, [connectedAddress, isConnected]);
+  }, [connectedAddress, isConnected, manualAddress]);
 
   const handleManualExplore = () => {
     const trimmed = formAddress.trim();
@@ -85,10 +83,32 @@ const Index = () => {
   };
 
   const [mintState, setMintState] = useState<"idle" | "minting" | "success" | "error">("idle");
-  const handleMint = useCallback(() => {
+  const handleMint = useCallback(async () => {
+    if (!wallet || !wallet.publicKey || !traits) return;
+    
     setMintState("minting");
-    setTimeout(() => setMintState("success"), 2000);
-  }, []);
+    try {
+      const result = await mintIdentityPrism({
+        wallet,
+        address: wallet.publicKey.toBase58(),
+        traits,
+        score,
+      });
+      
+      console.log("Mint success:", result);
+      setMintState("success");
+      toast.success("Identity Secured!", {
+        description: `Tx: ${result.signature.slice(0, 8)}...`,
+      });
+    } catch (err) {
+      console.error("Mint error:", err);
+      setMintState("error");
+      toast.error("Deployment failed", {
+        description: err instanceof Error ? err.message : "Unknown error",
+      });
+      setTimeout(() => setMintState("idle"), 3000);
+    }
+  }, [wallet, traits, score]);
 
   const celestialStats = useMemo(() => {
     const defaultStats = [
@@ -98,12 +118,12 @@ const Index = () => {
     ];
     if (!traits) return defaultStats;
     
-    let stars = traits.hasCombo || traits.rarityTier === "mythic" || traits.rarityTier === "legendary" ? 2 : 1;
-    let planetBase = Math.floor(traits.uniqueTokenCount / 10);
-    let minPlanets = traits.rarityTier === "mythic" ? 8 : traits.rarityTier === "legendary" ? 6 : traits.rarityTier === "epic" ? 5 : traits.rarityTier === "rare" ? 4 : 1;
-    let planets = Math.min(Math.max(minPlanets, planetBase), 10);
-    let moonsPerPlanet = Math.min(Math.floor(traits.nftCount / 50), 4);
-    let totalMoons = planets * moonsPerPlanet;
+    const stars = traits.hasCombo || traits.rarityTier === "mythic" || traits.rarityTier === "legendary" ? 2 : 1;
+    const planetBase = Math.floor(traits.uniqueTokenCount / 10);
+    const minPlanets = traits.rarityTier === "mythic" ? 8 : traits.rarityTier === "legendary" ? 6 : traits.rarityTier === "epic" ? 5 : traits.rarityTier === "rare" ? 4 : 1;
+    const planets = Math.min(Math.max(minPlanets, planetBase), 10);
+    const moonsPerPlanet = Math.min(Math.floor(traits.nftCount / 50), 4);
+    const totalMoons = planets * moonsPerPlanet;
 
     return [
       { id: "stars", label: "STARS", value: stars, icon: <Star className="h-3 w-3 text-yellow-400" /> },
@@ -115,16 +135,24 @@ const Index = () => {
   const achievements = useMemo(() => {
     if (!traits) return [];
     const list = [];
-    if (traits.hasCombo) list.push({ id: "og_combo", label: "OG COMBO" });
-    if (traits.hasSeeker) list.push({ id: "seeker", label: "SEEKER GENESIS" });
-    if (traits.hasPreorder) list.push({ id: "preorder", label: "PREORDER HODLER" });
+    
+    // Special OGs
+    if (traits.hasCombo) {
+      list.push({ id: "og_combo", label: "ULTIMATE COMBO OG" });
+    } else {
+      if (traits.hasSeeker) list.push({ id: "seeker", label: "SEEKER GENESIS" });
+      if (traits.hasPreorder) list.push({ id: "preorder", label: "PREORDER HODLER" });
+    }
+
     if (traits.hyperactiveDegen) list.push({ id: "degen", label: "HYPERACTIVE" });
     if (traits.isMemeLord) list.push({ id: "meme_lord", label: "MEME LORD" });
     if (traits.isDeFiKing) list.push({ id: "defi_king", label: "DEFI KING" });
     if (traits.isBlueChip) list.push({ id: "blue_chip", label: "BLUE CHIP" });
+    
     if (traits.solTier === "whale") list.push({ id: "sol_whale", label: "SOL WHALE" });
     else if (traits.solTier === "dolphin") list.push({ id: "sol_dolphin", label: "SOL DOLPHIN" });
     else if (traits.solTier === "shrimp") list.push({ id: "sol_shrimp", label: "SOL SHRIMP" });
+    
     return list;
   }, [traits]);
 
@@ -148,10 +176,6 @@ const Index = () => {
           formAddress={formAddress}
           setFormAddress={setFormAddress}
           onExplore={handleManualExplore}
-          connectWallet={connectWallet}
-          isConnecting={isConnecting}
-          hasProvider={hasProvider}
-          combinedError={combinedError}
           isScanning={viewState === "scanning"}
         />
       ) : (
@@ -199,19 +223,34 @@ const Index = () => {
                   </div>
                   <span className="address-text-mini">{displayAddress}</span>
                 </div>
-                <div className="score-mini">
+          <div className="score-mini flex flex-col items-center">
                   <span className={`score-num-mini ${traits?.rarityTier || "common"}`}>{isLoading ? "…" : score}</span>
                   <span className="score-label-mini">IDENTITY SCORE</span>
                 </div>
               </div>
 
-              {achievements.length > 0 && (
+              <div className="og-status-hud">
+                {traits?.hasCombo ? (
+                  <div className="og-badge combo active">ULTIMATE COMBO OG</div>
+                ) : (
+                  <>
+                    <div className={`og-badge seeker ${traits?.hasSeeker ? 'active' : ''}`}>
+                      SEEKER GENESIS
+                    </div>
+                    <div className={`og-badge preorder ${traits?.hasPreorder ? 'active' : ''}`}>
+                      CHAPTER 2
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {achievements.filter(a => !['og_combo', 'seeker', 'preorder'].includes(a.id)).length > 0 && (
                 <div className="achievements-hud">
                   <div className="ach-label">
                     <Trophy className="h-3 w-3 mr-1" /> ACHIEVEMENTS
                   </div>
                   <div className="ach-grid">
-                    {achievements.map(ach => (
+                    {achievements.filter(a => !['og_combo', 'seeker', 'preorder'].includes(a.id)).map(ach => (
                       <div key={ach.id} className={`ach-tag ${ach.id}`}>
                         {ach.label}
                       </div>
@@ -267,7 +306,12 @@ const Index = () => {
   );
 };
 
-function LandingOverlay({ formAddress, setFormAddress, onExplore, connectWallet, isConnecting, hasProvider, combinedError, isScanning }: any) {
+function LandingOverlay({ formAddress, setFormAddress, onExplore, isScanning }: { 
+  formAddress: string; 
+  setFormAddress: (val: string) => void; 
+  onExplore: () => void; 
+  isScanning: boolean; 
+}) {
   if (isScanning) {
     return (
       <div className="warp-overlay scanning-overlay">
@@ -308,21 +352,10 @@ function LandingOverlay({ formAddress, setFormAddress, onExplore, connectWallet,
           
           <div className="divider-v2">OR</div>
 
-          {!hasProvider ? (
-            <Button asChild className="connect-btn-v2 outline">
-              <a href="https://phantom.app/download" target="_blank" rel="noreferrer">
-                Install Phantom
-              </a>
-            </Button>
-          ) : (
-            <Button className="connect-btn-v2" onClick={connectWallet} disabled={isConnecting}>
-              {isConnecting ? <Loader2 className="h-5 w-5 animate-spin" /> : <PlugZap className="h-5 w-5 mr-2" />}
-              {isConnecting ? "Establishing link…" : "Connect Phantom"}
-            </Button>
-          )}
+          <div className="flex justify-center w-full">
+            <WalletMultiButton className="prism-wallet-btn-landing" />
+          </div>
         </div>
-        
-        {combinedError && <p className="landing-error-v2">{combinedError}</p>}
       </div>
     </div>
   );

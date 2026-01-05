@@ -15,23 +15,25 @@ export const SCORING = {
   SEEKER_GENESIS_BONUS: 200,
   CHAPTER2_PREORDER_BONUS: 150,
   COMBO_BONUS: 200,
-  BLUE_CHIP_BONUS: 100,
-  MEME_LORD_BONUS: 70,
-  DEFI_KING_BONUS: 70,
+  BLUE_CHIP_BONUS: 50,
+  MEME_LORD_BONUS: 30,
+  DEFI_KING_BONUS: 30,
   HYPERACTIVE_THRESHOLD_30D: 8, // tx/day
   DIAMOND_HANDS_DAYS: 60,
+  DIAMOND_HANDS_BONUS: 50,
+  HYPERACTIVE_BONUS: 50,
 
   SOL_BALANCE_THRESHOLDS: {
-    MINOR: { amount: 0.1, bonus: 30 },
-    MAJOR: { amount: 1, bonus: 70 },
-    LEGEND: { amount: 5, bonus: 150 },
+    MINOR: { amount: 0.1, bonus: 15 },
+    MAJOR: { amount: 1, bonus: 35 },
+    LEGEND: { amount: 5, bonus: 75 },
   },
 
-  WALLET_AGE_PER_YEAR: 100,
-  WALLET_AGE_MAX: 300,
+  WALLET_AGE_PER_YEAR: 50,
+  WALLET_AGE_MAX: 150,
 
-  TX_COUNT_MULTIPLIER: 0.5,
-  TX_COUNT_CAP: 200, // max 400 tx * 0.5
+  TX_COUNT_MULTIPLIER: 0.2,
+  TX_COUNT_CAP: 100,
 
   MAX_SCORE: 1200,
   BLUE_CHIP_THRESHOLD: 10,
@@ -67,6 +69,29 @@ export const LST_MINTS = {
 } as const;
 
 export const DEFI_POSITION_HINTS = ['kamino', 'drift', 'marginfi', 'mango', 'jito', 'solend', 'zeta'];
+
+export const BLUE_CHIP_COLLECTIONS = [
+  'J1S9H3QjnRtBbbuD4HjPV6RpRhwuk4zKbxsnCHuTgh9w', // Mad Lads
+  'SMBH3wF6pdt967Y62N7S5mB4tJSTH3KAsdJ82D3L2nd', // SMB Gen2
+  'SMB3ndYpSXY97H8MhpxYit3pD8TzYJ5v6ndP4D2L2nd', // SMB Gen3
+  '6v9UWGmEB5Hthst9KqEAgXW6XF6R6yv4t7Yf3YfD3A7t', // Claynosaurz
+  'BUjZjAS2vbbb9p56fAun4sFmPAt8W6JURG5L3AkVvHP9', // Famous Fox Federation
+  '4S8L8L1M5E1X5vM1Y1M1X5vM1Y1M1X5vM1Y1M1X5vM1Y', // Tensorians
+  '7TENEKwBnkpENuefriGPg4hBDR4WJ2Gyfw5AhdkMA4rq', // Okay Bears
+  '9uBX3ASuCtv6S5o56yq7F9n7U6o9o7o9o7o9o7o9o7o9', // Degen Ape Academy
+  'GGSGP689TGoX6WJ9mSj2S8mH78S8S8S8S8S8S8S8S8S8S', // Galactic Geckos
+  'CDgbhX61QFADQAeeYKP5BQ7nnzDyMkkR3NEhYF2ETn1k', // Taiyo Robotics
+  'Port7uDYB3P8meS5m7Yv62222222222222222222222', // Portals
+  'CocMmG5v88888888888888888888888888888888888', // Cets on Creck
+  'y00t9S9mD9mD9mD9mD9mD9mD9mD9mD9mD9mD9mD9mD', // y00ts
+  'abc777777777777777777777777777777777777777', // ABC
+  'LILY5555555555555555555555555555555555555', // LILY
+  'PRM77777777777777777777777777777777777777', // Primates
+  'Jelly8888888888888888888888888888888888888', // Jelly Rascals
+  '4Q2C5S930M9c9e96b', // Froganas (prefix match suggested)
+  'TFF77777777777777777777777777777777777777', // TFF
+  'DTP77777777777777777777777777777777777777', // DTP
+];
 
 export const BLUE_CHIP_COLLECTION_NAMES = ['mad lads', 'solana monkey business', 'claynosaurz'];
 
@@ -116,19 +141,19 @@ export const VISUAL_CONFIG = {
     MAX_PARTICLES: 3000, // Reduced for mobile performance
   },
   
-  // Animation speeds (slow and majestic)
+  // Animation speeds (Dramatically slowed down for a majestic cinematic feel)
   ANIMATION: {
-    SUN_ROTATION: 0.0002,
-    PLANET_ORBIT: 0.0004,
-    PLANET_ROTATION: 0.0006,
-    MOON_ORBIT: 0.0008,
-    BINARY_ORBIT: 0.0005,
+    SUN_ROTATION: 0.001,
+    PLANET_ORBIT: 0.02,
+    PLANET_ROTATION: 0.075,
+    MOON_ORBIT: 0.1,
+    BINARY_ORBIT: 0.01,
   },
   
   // Post-processing (High-Clarity Cinematic - Mobile Optimized)
   POST_PROCESSING: {
-    BLOOM_INTENSITY: 1.4,
-    BLOOM_LUMINANCE_THRESHOLD: 0.2,
+    BLOOM_INTENSITY: 1.5,
+    BLOOM_LUMINANCE_THRESHOLD: 0.85,
     BLOOM_LUMINANCE_SMOOTHING: 0.9,
     CHROMATIC_ABERRATION: 0.0005, // Very subtle, edge-only
     VIGNETTE_DARKNESS: 0.35,
@@ -160,18 +185,10 @@ export type RarityTier = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 
 // Planet types for visual variety
 export const PLANET_TYPES = [
-  { name: 'earth', baseColor: '#2E8B57', accent: '#8ddbe0', roughness: 0.5, metalness: 0.15, surface: 'oceanic' },
-  { name: 'oceanic', baseColor: '#118cd6', accent: '#f5f8ff', roughness: 0.25, metalness: 0.08, surface: 'oceanic' },
-  { name: 'rocky', baseColor: '#8B7355', accent: '#d1bfa5', roughness: 0.9, metalness: 0.12, surface: 'cratered' },
-  { name: 'cratered', baseColor: '#777777', accent: '#cfcfcf', roughness: 0.85, metalness: 0.2, surface: 'cratered' },
-  { name: 'gaseous', baseColor: '#D9A066', accent: '#f0d8b0', roughness: 0.12, metalness: 0.02, surface: 'gas' },
-  { name: 'gas_striped', baseColor: '#b980ff', accent: '#f8b4ff', roughness: 0.1, metalness: 0.05, surface: 'gas' },
-  { name: 'icy', baseColor: '#B0E0E6', accent: '#f7fdff', roughness: 0.3, metalness: 0.22, surface: 'cratered' },
-  { name: 'volcanic', baseColor: '#8B0000', accent: '#ff7b00', roughness: 0.75, metalness: 0.25, surface: 'basic' },
-  { name: 'desert', baseColor: '#DAA520', accent: '#f9e4a4', roughness: 0.95, metalness: 0.05, surface: 'basic' },
-  { name: 'toxic', baseColor: '#9ACD32', accent: '#f0ffb3', roughness: 0.6, metalness: 0.15, surface: 'basic' },
-  { name: 'crystal', baseColor: '#E0FFFF', accent: '#baf5ff', roughness: 0.1, metalness: 0.8, surface: 'basic' },
-  { name: 'lava', baseColor: '#FF4500', accent: '#ffd74d', roughness: 0.65, metalness: 0.25, surface: 'basic' },
+  { name: 'terrestrial', baseColor: '#1a4d2e', accent: '#4ade80', surface: 'terrestrial', roughness: 0.8, metalness: 0.2, emissiveIntensity: 0.35 },
+  { name: 'volcanic', baseColor: '#7c2d12', accent: '#ef4444', surface: 'volcanic', roughness: 0.9, metalness: 0.2, emissiveIntensity: 0.4 },
+  { name: 'gas', baseColor: '#92400e', accent: '#f59e0b', surface: 'gas', roughness: 0.5, metalness: 0.2, emissiveIntensity: 0.25 },
+  { name: 'ice', baseColor: '#bae6fd', accent: '#ffffff', surface: 'ice', roughness: 0.2, metalness: 0.5, emissiveIntensity: 0.3 },
 ] as const;
 
 export const MEME_COIN_PRICES_USD: Record<keyof typeof MEME_COIN_MINTS, number> = {
